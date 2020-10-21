@@ -1,0 +1,10 @@
+dist*/
+tmp/
+lua*/*.css
+lua*/*.html
+lua*/*.json
+lua*/*.png
+lua*/_*.lua
+lua*/test*.lua
+*.zip
+mods/

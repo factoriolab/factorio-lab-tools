@@ -1,0 +1,4 @@
+{
+  "editor.formatOnSave": false,
+  "lua.targetVersion": "5.2"
+}
