@@ -21,10 +21,10 @@ local L = require("factorio.locale").init(args.language, mods, dbglog)
 --[[ prepare ]]----------------------------------------------------------------
 
 local items_ptr = {}  -- таблица указателей на все предметы с параметром "stack_size"
--- local items_as_ingridient = { ["space-science-pack"] = true, ["rocket-part"] = true } -- имена предметов в ингридиентах
--- local items_as_product = { ["space-science-pack"] = true, ["rocket-part"] = true }    -- имена предметов в продуктах
-local items_as_ingridient = { ["rocket-part"] = true } -- имена предметов в ингридиентах
-local items_as_product = { ["rocket-part"] = true }    -- имена предметов в продуктах
+local items_as_ingredient = { ["space-science-pack"] = true, ["rocket-part"] = true } -- имена предметов в ингридиентах
+local items_as_product = { ["space-science-pack"] = true, ["rocket-part"] = true }    -- имена предметов в продуктах
+-- local items_as_ingredient = { ["rocket-part"] = true } -- имена предметов в ингридиентах
+-- local items_as_product = { ["rocket-part"] = true }    -- имена предметов в продуктах
 local items_used = {}
 local items_ready = {}         -- таблица указателей на предметы
 
@@ -32,6 +32,28 @@ local recipes_enabled = {}      -- имена рецептов включаем�
 local recipes_ptr = {}          -- таблица указателей на задействованные рецепты
 local recipes_disabled_ptr = {} -- таблица указателей на отключённые рецепты
 local recipes_sorted = {}       -- таблица указателей на отсортированные рецепты
+local recipes_extra = {
+    {
+        ["id"] = "steam",
+        ["time"] = 1,
+        ["in"] = { ["water"] = 60 },
+        ["out"] = { ["steam"] = 60 },
+        ["producers"] = { "boiler" },
+    },
+    {
+        ["id"] = "rocket-part",
+        ["time"] = 3,
+        ["in"] = {["low-density-structure"] = 10, ["rocket-control-unit"] = 10, ["rocket-fuel"] = 10},
+        ["producers"] = {"rocket-silo"}
+    },
+    {
+        ["id"] = "space-science-pack",
+        ["time"] = 40.33,
+        ["in"] = {["rocket-part"] = 100, ["satellite"] = 1},
+        ["out"] = {["space-science-pack"] = 1000},
+        ["producers"] = {"rocket-silo"}
+    }
+}
 
 local categories_used = {}
 
@@ -80,7 +102,7 @@ local function set_IngredientPrototype(ptr)
                 p[2] = nil
             end
 
-            items_as_ingridient[p["name"]] = true
+            items_as_ingredient[p["name"]] = true
         end
     end
 end
@@ -486,13 +508,13 @@ local function sort_recipes()
 
     -- подсчёт предметов
     local c = 0
-    for k, v in pairs(items_as_ingridient) do c = c + 1 end
-    items_as_ingridient.count = c
+    for k, v in pairs(items_as_ingredient) do c = c + 1 end
+    items_as_ingredient.count = c
     c = 0
     for k, v in pairs(items_as_product) do c = c + 1 end
     items_as_product.count = c
     dbglog(1, ("\tfound %d ingridients and %d products\n")
-        :format(items_as_ingridient.count, items_as_product.count))
+        :format(items_as_ingredient.count, items_as_product.count))
 
     -- заполнение таблицы отсортированными рецептами
     dbglog(1, "clear items...\n")
@@ -508,7 +530,7 @@ local function sort_recipes()
         local ptr = get_item_ptr(name, nil, "3")
         if ptr then
             items_ready[name] = ptr
-            items_as_ingridient[name] = nil
+            items_as_ingredient[name] = nil
             items_as_product[name] = nil
         else
             -- TODO: поиск по продуктам рецепта???
@@ -516,7 +538,7 @@ local function sort_recipes()
     end
 
     c = 0
-    for k, v in pairs(items_as_ingridient) do
+    for k, v in pairs(items_as_ingredient) do
         if "count" ~= k then
             c = c + 1
             items_used[k] = true
@@ -556,8 +578,10 @@ local function sort_items()
     local t = {}
     for k, _ in pairs(items_used) do
         local item_ptr = get_item_ptr(k, nil, "4")
-        local ord, sgr, sgo, grp, gro = get_order_sub_group(item_ptr)
-        table.insert(t, {item_ptr, item_ptr["name"], ord, sgr, sgo, grp, gro})
+        if item_ptr ~= nil then
+            local ord, sgr, sgo, grp, gro = get_order_sub_group(item_ptr)
+            table.insert(t, {item_ptr, item_ptr["name"], ord, sgr, sgo, grp, gro})
+        end
     end
     util.sort_by(t, 7, 6, 5, 4, 3, 2)
 
@@ -656,6 +680,14 @@ local function make_items() -- for Factorio Lab
                     t.factory[energy] = usage
                     t.factory.drain = drain
                     t.factory.pollution = pollution
+                end
+
+                if mach.fluid then
+                    local r = {}
+                    r["id"] = mach.fluid
+                    r["time"] = 1
+                    r["producers"] = { mach.name }
+                    table.insert(recipes_extra, r)
                 end
             end
             mach = raw["furnace"][p.name]
@@ -861,6 +893,14 @@ local function make_recipes() -- for Factorio Lab
             end
         end
 
+        local res = r.normal.results
+        if #res > 1 or res[1].name ~= r.name or res[1].amount > 1 then
+            t["out"] = {}
+            for j = 1, #res do
+                t["out"][res[j].name] = res[j].amount
+            end
+        end
+
         if r.expensive ~= r.normal then
             t["expensive"] = {}
             local et = r.expensive.energy_required or 0.5
@@ -875,13 +915,12 @@ local function make_recipes() -- for Factorio Lab
                 local ing = ings[j]
                 t["expensive"]["in"][ing.name] = ing.amount
             end
-        end
-
-        local res = r.normal.results
-        if #res > 1 or res[1].name ~= r.name or res[1].amount > 1 then
-            t["out"] = {}
-            for j = 1, #res do
-                t["out"][res[j].name] = res[j].amount
+            res = r.expensive.results
+            if #res > 1 or res[1].name ~= r.name or res[1].amount > 1 then
+                t["expensive"]["out"] = {}
+                for j = 1, #res do
+                    t["expensive"]["out"][res[j].name] = res[j].amount
+                end
             end
         end
 
@@ -897,10 +936,11 @@ local function make_recipes() -- for Factorio Lab
     -- now raw-recources, etc
     for i = 1, #items_used do
         local item = items_used[i]
-        if "raw-resource" == item[2] then
-            local p = item[1]
-            local res = raw["resource"][p.name]
-            if res then
+
+        local p = item[1]
+        local res = raw["resource"][p.name]
+        if res then
+            if "raw-resource" == item[2] then
                 local t = {}
                 t.id = p.name
                 t.mining = true
@@ -925,48 +965,28 @@ local function make_recipes() -- for Factorio Lab
                     end
                 end
                 table.insert(out, t)
+            elseif res.category ~= nil then
+                local t = {}
+                t.id = p.name
+                t.mining = true
+                t.time = res.minable.mining_time
+                t.out =  { [p.name] = 10 };
+
+                local prod = producers[res.category]
+                if prod then
+                    t.producers = {}
+                    for _, v in ipairs(prod) do
+                        table.insert(t.producers, v)
+                    end
+                end
+                table.insert(out, t)
             end -- if res
         end -- if "raw-resource"
     end -- for i
 
-    local t
-    t = {
-        ["id"] = "water",
-        ["time"] = 1,
-        ["producers"] = { "offshore-pump" },
-    }
-    table.insert(out, t)
-    t = {
-        ["id"] = "crude-oil",
-        ["mining"] = true,
-        ["time"] = 1,
-        ["out"] = { ["crude-oil"] = 10 },
-        ["producers"] = { "pumpjack" },
-    }
-    table.insert(out, t)
-    t = {
-        ["id"] = "steam",
-        ["time"] = 1,
-        ["in"] = { ["water"] = 60 },
-        ["out"] = { ["steam"] = 60 },
-        ["producers"] = { "boiler" },
-    }
-    table.insert(out, t)
-    t = {
-        ["id"] = "rocket-part",
-        ["time"] = 3,
-        ["in"] = {["low-density-structure"] = 10, ["rocket-control-unit"] = 10, ["rocket-fuel"] = 10},
-        ["producers"] = {"rocket-silo"}
-    }
-    table.insert(out, t)
-    -- t = {
-    --     ["id"] = "space-science-pack",
-    --     ["time"] = 40.33,
-    --     ["in"] = {["rocket-part"] = 100, ["satellite"] = 1},
-    --     ["out"] = {["space-science-pack"] = 1000},
-    --     ["producers"] = {"rocket-silo"}
-    -- }
-    -- table.insert(out, t)
+    for _, e in pairs(recipes_extra) do
+        table.insert(out, e)
+    end
 
     return out
 end
