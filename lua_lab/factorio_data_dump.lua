@@ -179,7 +179,7 @@ _G.table_size = function (t)
     return count
 end
 
-local _F = { mods = {} } -- shared env for every called mod
+local _F = { mods = { base = "1.0.0" } } -- shared env for every called mod
 local _E
 
 _require = function(m, skip, opt)
@@ -218,6 +218,7 @@ _require = function(m, skip, opt)
 
     local m_dot = m -- store value for loadfile()
     m = m:gsub("%.", "/")
+    m = m:gsub("/lua$", "")
 
     local loaded = {
         m,
