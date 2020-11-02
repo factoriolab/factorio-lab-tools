@@ -119,6 +119,9 @@ function translate(entry, mute) -- old args: mod, section, id, dbg
 
     -- find parameters (_... __value___ ...)
     local function param_f(k)
+        if type(loc_name[2]) == "number" then
+            return loc_name[2]
+        end
         local v = loc_name[2][k/1]
         if v then
             local sect, name = v:match("(.+)%.(.+)")
