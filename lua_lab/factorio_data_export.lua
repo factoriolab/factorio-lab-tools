@@ -1018,6 +1018,33 @@ local function make_recipes() -- for Factorio Lab
     return out
 end
 
+local function trim(items, recipes)
+    for i=#items,1,-1 do
+        local item = items[i]
+        local found = false;
+        for r, recipe in pairs(recipes) do
+            if not recipe["out"] and recipe.id == item.id then
+                found = true;
+                break;
+            elseif recipe["in"] and recipe["in"][item.id] then
+                found = true;
+                break;
+            elseif recipe["out"] and recipe["out"][item.id] then
+                found = true;
+                break;
+            elseif recipe["expensive"] and recipe["expensive"]["in"] and recipe["expensive"]["in"][item.id] then
+                found = true;
+                break;
+            elseif recipe["expensive"] and recipe["expensive"]["out"] and recipe["expensive"]["out"][item.id] then
+                found = true;
+                break;
+            end
+        end
+        if not found then
+            table.remove(items, i);            
+        end
+    end
+end
 
 --[[ main ]]-------------------------------------------------------------------
 
@@ -1085,6 +1112,8 @@ local function main()
 
     local i, l = make_items()
     local r = make_recipes()
+    trim(i, r)
+
     local ic = gd_image.generate_image(icons)
 
     local out = {}
