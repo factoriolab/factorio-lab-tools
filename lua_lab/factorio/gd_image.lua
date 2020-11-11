@@ -81,7 +81,7 @@ local function copy_icon(x, y, SZ, mult, icon, canvas)
 
         local scale = v.scale or 1.0
         local mult = 1
-        if v.mips > 1 and scale ~= 1.0 then
+        if tSZ == 64 and size <= tSZ and scale ~= 1.0 and size * scale < 32 then
             mult = 2
         end
         local dstW = size * scale * mult

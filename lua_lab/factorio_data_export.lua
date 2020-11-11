@@ -53,6 +53,15 @@ local recipes_extra = {
         ["out"] = {["space-science-pack"] = 1000},
         ["producers"] = {"rocket-silo"}
     }
+    -- KRASTORIO 2
+    -- ,
+    -- {
+    --     ["id"] = "space-research-data",
+    --     ["time"] = 40.33,
+    --     ["in"] = {["rocket-part"] = 100, ["satellite"] = 1},
+    --     ["out"] = {["space-research-data"] = 1000},
+    --     ["producers"] = {"rocket-silo"}
+    -- }
 }
 
 local categories_used = {}
@@ -894,10 +903,16 @@ local function make_recipes() -- for Factorio Lab
         end
 
         local res = r.normal.results
-        if #res > 1 or res[1].name ~= r.name or res[1].amount > 1 then
+        if #res > 1 or res[1].name ~= r.name
+            or (res[1].amount ~= nil and res[1].amount > 1)
+            or (res[1].amount_min ~= nil and res[1].amount_min > 0) then
             t["out"] = {}
             for j = 1, #res do
-                t["out"][res[j].name] = res[j].amount
+                if res[j].amount_min then
+                    t["out"][res[j].name] = (res[j].amount_max + res[j].amount_min) / 2
+                else
+                    t["out"][res[j].name] = res[j].amount
+                end
             end
         end
 
@@ -939,8 +954,23 @@ local function make_recipes() -- for Factorio Lab
 
         local p = item[1]
         local res = raw["resource"][p.name]
+
+        if res == nil then
+            for _, e in pairs(raw["resource"]) do
+                if e.minable then
+                    if e.minable.result == p.name then
+                        res = e
+                        break;
+                    end
+                end
+            end
+        end
+
         if res then
-            if "raw-resource" == item[2] then
+            if "raw-resource" == item[2] or "raw-material" == item[2] then
+                if item[2] == "raw-material" then
+                    dbglog(1, "Processing raw material '" .. p.name .. "' as raw resource\n")
+                end
                 local t = {}
                 t.id = p.name
                 t.mining = true
@@ -957,14 +987,12 @@ local function make_recipes() -- for Factorio Lab
                 end
 
                 local cat = p.category or "basic-solid"
-                local prod = producers[cat]
-                if prod then
-                    t["producers"] = {}
-                    for _, v in ipairs(prod) do
-                        table.insert(t["producers"], v)
-                    end
+                if producers[cat] then
+                    t["producers"] = { table.unpack(producers[cat]) }
+                    table.insert(out, t)
+                else
+                    dbglog(1, "failed to find producers for resouce: " .. p.name .. "\n")
                 end
-                table.insert(out, t)
             elseif res.category ~= nil then
                 local t = {}
                 t.id = p.name
@@ -972,14 +1000,13 @@ local function make_recipes() -- for Factorio Lab
                 t.time = res.minable.mining_time
                 t.out =  { [p.name] = 10 };
 
-                local prod = producers[res.category]
-                if prod then
-                    t.producers = {}
-                    for _, v in ipairs(prod) do
-                        table.insert(t.producers, v)
-                    end
+                local cat = res.category
+                if producers[cat] then
+                    t["producers"] = { table.unpack(producers[cat]) }
+                    table.insert(out, t)
+                else
+                    dbglog(1, "failed to find producers for resource: " .. p.name .. "\n")
                 end
-                table.insert(out, t)
             end -- if res
         end -- if "raw-resource"
     end -- for i

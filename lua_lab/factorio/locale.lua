@@ -74,7 +74,7 @@ local function get_loc_name(section, id, mute)
                 loc = loc .. " " .. cap
             end
         end
-        dbglog(1, "using parsed id, result: " .. loc .. "\n")
+        dbglog(1, "Using parsed id, result: '" .. loc .. "'\n")
     end
 
     return loc
@@ -131,23 +131,41 @@ function translate(entry, mute) -- old args: mod, section, id, dbg
         end
     end
 
-    local sect, name = loc_name[1]:match("(.+)%.(.+)")
-    local loc = get_loc_name({sect}, name, mute)
+    if type(loc_name) == "string" then
+        return loc_name
+    end
 
-    if not loc and type(loc_name) == "table" then
-        for a, b in pairs(loc_name) do
-            if type(b) == "table" then
-                for _, c in pairs(b) do
+    if loc_name[1] == "" then
+        local loc = ""
+        for _, v in pairs(loc_name) do
+            if type(v) == "string" then
+                loc = loc .. v
+            elseif type(v) == "table" then
+                sect, name = v[1]:match("(.+)%.(.+)")
+                local part = get_loc_name({sect}, name, mute)
+                loc = loc .. part
+            end
+        end
+
+        dbglog(1, "Using empty key special case, result: '" .. loc .. "'\n")
+        return loc
+    else
+        local sect, name = loc_name[1]:match("(.+)%.(.+)")
+        local loc = get_loc_name({sect}, name, mute)
+    
+        if not loc and type(loc_name) == "table" then
+            for a, b in pairs(loc_name) do
+                if type(b) == "table" then
                     sect, name = b[1]:match("(.+)%.(.+)")
                     loc = get_loc_name({sect}, name, mute)
                 end
             end
         end
+    
+        loc = loc and loc:gsub("__(%d+)__", param_f) or "#" .. name .. "#"
+    
+        return loc
     end
-
-    loc = loc and loc:gsub("__(%d+)__", param_f) or "#" .. name .. "#"
-
-    return loc
 end
 
 return {
