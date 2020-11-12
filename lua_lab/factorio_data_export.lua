@@ -463,6 +463,10 @@ local function process_recipes()
         if delivery_weapon_cannon then
             skip = true
         end
+        if rcp["results"] and #rcp["results"] == 0 then
+            dbglog(1, "Skipping recipe '" .. rcp.name .. "' because it has no results.\n")
+            skip = true
+        end
 
         if (not (true == rcp.hidden))
         and (not (false == rcp.enabled) or recipes_enabled[name])
