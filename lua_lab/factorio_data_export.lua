@@ -912,10 +912,16 @@ local function make_recipes() -- for Factorio Lab
             or (res[1].amount_min ~= nil and res[1].amount_min > 0) then
             t["out"] = {}
             for j = 1, #res do
+                local add;
                 if res[j].amount_min then
-                    t["out"][res[j].name] = (res[j].amount_max + res[j].amount_min) / 2
+                    add = (res[j].amount_max + res[j].amount_min) / 2
                 else
-                    t["out"][res[j].name] = res[j].amount
+                    add = res[j].amount
+                end
+                if t["out"][res[j].name] then
+                    t["out"][res[j].name] = t["out"][res[j].name] + add
+                else
+                    t["out"][res[j].name] = add
                 end
             end
         end
