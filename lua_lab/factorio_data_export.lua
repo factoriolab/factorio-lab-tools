@@ -15,60 +15,28 @@ local gd_image = require("factorio.gd_image")(opt)
 local util = require("factorio.utils")
 local L = require("factorio.locale").init(args.language, mods, dbglog)
 
--- assert("Car" == L(raw.car.car)) -- only for EN
-
-
 --[[ prepare ]]----------------------------------------------------------------
 
-local items_ptr = {}  -- таблица указателей на все предметы с параметром "stack_size"
-local items_as_ingredient = { ["space-science-pack"] = true, ["rocket-part"] = true } -- имена предметов в ингридиентах
-local items_as_product = { ["space-science-pack"] = true, ["rocket-part"] = true }    -- имена предметов в продуктах
--- local items_as_ingredient = { ["rocket-part"] = true } -- имена предметов в ингридиентах
--- local items_as_product = { ["rocket-part"] = true }    -- имена предметов в продуктах
+local items_ptr = {}
+local items_as_ingredient = {}
+local items_as_product = {}
 local items_used = {}
-local items_ready = {}         -- таблица указателей на предметы
+local items_ready = {}
+local items_burnt = {}
 
-local recipes_enabled = {}      -- имена рецептов включаемых технологиями
-local recipes_ptr = {}          -- таблица указателей на задействованные рецепты
-local recipes_disabled_ptr = {} -- таблица указателей на отключённые рецепты
-local recipes_sorted = {}       -- таблица указателей на отсортированные рецепты
-local recipes_extra = {
-    {
-        ["id"] = "steam",
-        ["time"] = 1,
-        ["in"] = { ["water"] = 60 },
-        ["out"] = { ["steam"] = 60 },
-        ["producers"] = { "boiler" },
-    },
-    {
-        ["id"] = "rocket-part",
-        ["time"] = 3,
-        ["in"] = {["low-density-structure"] = 10, ["rocket-control-unit"] = 10, ["rocket-fuel"] = 10},
-        ["producers"] = {"rocket-silo"}
-    },
-    {
-        ["id"] = "space-science-pack",
-        ["time"] = 40.33,
-        ["in"] = {["rocket-part"] = 100, ["satellite"] = 1},
-        ["out"] = {["space-science-pack"] = 1000},
-        ["producers"] = {"rocket-silo"}
-    }
-    -- KRASTORIO 2
-    -- ,
-    -- {
-    --     ["id"] = "space-research-data",
-    --     ["time"] = 40.33,
-    --     ["in"] = {["rocket-part"] = 100, ["satellite"] = 1},
-    --     ["out"] = {["space-research-data"] = 1000},
-    --     ["producers"] = {"rocket-silo"}
-    -- }
-}
+local recipes_enabled = {}
+local recipes_ptr = {}
+local recipes_disabled_ptr = {}
+local recipes_sorted = {}
+local recipes_extra = {}
 
 local categories_used = {}
-
 local icons = {}
-
-local producers = {}    -- список категория = {машина, ...}
+local img_cache = {}
+local copies = {}
+local producers = {}
+local burners = {}
+local launches = {}
 
 --[[ level 4 ]]----------------------------------------------------------------
 
@@ -166,7 +134,7 @@ local function set_IconSpecification(ptr, from)
         ico = get_IconSpecification(from)
     end
     if not ico then
-        error(ptr.name .. " and " .. from.name .. " haven't icon(s)!")
+        error(ptr.name .. " and " .. from.name .. " have no icon(s)!")
     end
 
     ptr.icon = nil
@@ -232,8 +200,7 @@ local function set_recipe_data(ptr, mode)
 
             set_IconSpecification(ptr)
 
-            assert(ptr["subgroup"], ptr["name"] .. ": recipe haven't subgroup!")
-            --assert(ptr["order"], ptr["name"] .. ": recipe haven't order!")
+            assert(ptr["subgroup"], ptr["name"] .. ": recipe has no subgroup!")
 
             ptr["loc_name"] = L(ptr)
         else
@@ -293,8 +260,8 @@ end
 
 
 local function get_order_sub_group(entry)
-    local order          = entry["order"] or entry.name --error("missed [\"" .. entry.name .. "\"][\"order\"]")
-    local subgroup       = entry["subgroup"] or ("fluid" == entry.type and "fluid") or "other" --error("item have not subgroup")
+    local order          = entry["order"] or entry.name
+    local subgroup       = entry["subgroup"] or ("fluid" == entry.type and "fluid") or "other"
     local subgroup_ptr   = raw["item-subgroup"][subgroup] or error("no subgroup")
     local subgroup_order = subgroup_ptr["order"] or error("no subgroup order")
     local group          = subgroup_ptr["group"] or error("subgroup have not group")
@@ -345,8 +312,371 @@ local function process_producers(entry, drill)
                 end
                 table.insert(producers[cat], entry.name)
             end
+        end
+    end
+
+    local type = (entry.energy_source and entry.energy_source.type) or "burner"
+    local usage = entry.consumption
+    if type == "burner" and usage then
+        local cat = ((entry.energy_source and entry.energy_source.fuel_category) or entry.burner.fuel_category) or "chemical"
+        if not burners[cat] then
+            burners[cat] = {}
+        end
+        usage = util.convert_energy(usage) / 1000
+        local b = {
+            id = entry.name,
+            usage = usage
+        }
+        table.insert(burners[cat], b)
+    end
+end
+
+
+local function process_item(p, t, limitation)
+    local belt = raw["transport-belt"][p.name]
+    if belt then
+        t.belt = belt and { speed = 480.0 * belt.speed }
+    end
+
+    local beacon = raw["beacon"][p.name]
+    if beacon then
+        local type = beacon.energy_source.type
+        local category = beacon.energy_source.fuel_category
+        local usage = beacon.energy_usage
+        usage = util.convert_energy(usage) / 1000
+        t.beacon = {
+            effectivity = beacon.distribution_effectivity,
+            range = beacon.supply_area_distance,
+            type = type,
+            category = category,
+            usage = usage,
+            modules = beacon.module_specification.module_slots
+        }
+    end
+    
+    local cargo_wagon = raw["cargo-wagon"][p.name]
+    if cargo_wagon then
+        t.cargoWagon = {
+            size = cargo_wagon.inventory_size
+        }
+    end
+    
+    local fluid_wagon = raw["fluid-wagon"][p.name]
+    if fluid_wagon then
+        t.fluidWagon = {
+            capacity = fluid_wagon.capacity
+        }
+    end
+
+    local processed = false
+    local mach = raw["mining-drill"][p.name]
+    if mach then
+        processed = true
+        local type = mach.energy_source.type
+        local category = mach.energy_source.fuel_category
+        local pollution = mach.energy_source.emissions_per_minute
+        local usage = mach.energy_usage
+        usage = util.convert_energy(usage) / 1000
+        local drain
+        if "electric" == type and mach.energy_source.drain then
+            drain = util.convert_energy(mach.energy_source.drain)
+        end
+        if "burner" == type and not category then
+            category = "chemical"
+        end
+        t.factory = {
+            speed = mach.mining_speed or 1.0,
+            modules = mach.module_specification
+            and mach.module_specification.module_slots
+            or 0,
+            usage = usage,
+            drain = drain,
+            pollution = pollution,
+            type = type,
+            category = category,
+            mining = true
+        }
+
+        process_producers(mach, true)
+    end
+    mach = raw["offshore-pump"][p.name]
+    if mach then
+        processed = true
+        t.factory = {
+            speed = mach.pumping_speed * 60, -- pumping_speed per tick
+            modules = mach.module_specification
+            and mach.module_specification.module_slots
+            or 0,
+        }
+        local type = mach.energy_source and mach.energy_source.type
+        if type then
+            local category = mach.energy_source.fuel_category
+            local pollution = mach.energy_source.emissions_per_minute
+            local usage = mach.energy_usage
+            usage = util.convert_energy(usage) / 1000
+            local drain
+            if "electric" == type and mach.energy_source.drain then
+                drain = util.convert_energy(mach.energy_source.drain)
+            end
+            if "burner" == type and not category then
+                category = "chemical"
+            end
+            t.factory.type = type
+            t.factory.usage = usage
+            t.factory.category = category
+            t.factory.drain = drain
+            t.factory.pollution = pollution
+        end
+
+        if mach.fluid then
+            local r = {}
+            r["id"] = mach.fluid
+            r["time"] = 1
+            r["producers"] = { mach.name }
+            table.insert(recipes_extra, r)
+        end
+    end
+    mach = raw["furnace"][p.name]
+    if mach then
+        processed = true
+        local type = mach.energy_source.type
+        local category = mach.energy_source.fuel_category
+        local pollution = mach.energy_source.emissions_per_minute
+        local usage = mach.energy_usage
+        usage = util.convert_energy(usage) / 1000
+        local drain
+        if "electric" == type and mach.energy_source.drain then
+            drain = util.convert_energy(mach.energy_source.drain)
+        end
+        if "burner" == type and not category then
+            category = "chemical"
+        end
+        t.factory = {
+            speed = mach.crafting_speed or 1.0,
+            modules = mach.module_specification
+            and mach.module_specification.module_slots
+            or 0,
+            type = type,
+            usage = usage,
+            category = category,
+            drain = drain,
+            pollution = pollution,
+        }
+
+        process_producers(mach)
+    end
+    mach = raw["assembling-machine"][p.name]
+    if mach then
+        processed = true
+        local type = mach.energy_source.type
+        local category = mach.energy_source.fuel_category
+        local pollution = mach.energy_source.emissions_per_minute
+        local usage = mach.energy_usage
+        usage = util.convert_energy(usage) / 1000
+        local drain
+        if "electric" == type and mach.energy_source.drain then
+            drain = util.convert_energy(mach.energy_source.drain)
+        end
+        if "burner" == type and not category then
+            category = "chemical"
+        end
+        t.factory = {
+            speed = mach.crafting_speed or 1.0,
+            modules = mach.module_specification
+            and mach.module_specification.module_slots
+            or 0,
+            type = type,
+            usage = usage,
+            category = category,
+            drain = drain,
+            pollution = pollution,
+        }
+
+        process_producers(mach)
+    end
+    mach = raw["lab"][p.name]
+    if mach then
+        processed = true
+        local type = mach.energy_source.type
+        local category = mach.energy_source.fuel_category
+        local pollution = mach.energy_source.emissions_per_minute
+        local usage = mach.energy_usage
+        usage = util.convert_energy(usage) / 1000
+        local drain
+        if "electric" == type and mach.energy_source.drain then
+            drain = util.convert_energy(mach.energy_source.drain)
+        end
+        if "burner" == type and not category then
+            category = "chemical"
+        end
+        t.factory = {
+            speed = mach.researching_speed or 1.0,
+            modules = mach.module_specification
+            and mach.module_specification.module_slots
+            or 0,
+            type = type,
+            usage = usage,
+            category = category,
+            drain = drain,
+            pollution = pollution,
+            research = true
+        }
+    end
+    mach = raw["boiler"][p.name]
+    if mach then
+        processed = true
+        local type = mach.energy_source.type
+        local category = mach.energy_source.fuel_category
+        local pollution = mach.energy_source.emissions_per_minute
+        local usage = mach.energy_consumption
+        usage = util.convert_energy(usage) / 1000
+        local drain
+        if "electric" == type and mach.energy_source.drain then
+            drain = util.convert_energy(mach.energy_source.drain)
+        end
+        if "burner" == type and not category then
+            category = "chemical"
+        end
+        t.factory = {
+            speed = 1.0,
+            modules = 0,
+            type = type,
+            usage = usage,
+            category = category,
+            drain = drain,
+            pollution = pollution,
+        }
+    end
+
+    local mach = raw["rocket-silo"][p.name]
+    if mach then
+        local type = mach.energy_source.type
+        local category = mach.energy_source.fuel_category
+        local pollution = mach.energy_source.emissions_per_minute
+        local usage = mach.energy_usage
+        usage = util.convert_energy(usage) / 1000
+        local drain
+        if "electric" == type and mach.energy_source.drain then
+            drain = util.convert_energy(mach.energy_source.drain)
+        end
+        if "burner" == type and not category then
+            category = "chemical"
+        end
+        t.factory = {
+            speed = mach.crafting_speed or 1.0,
+            modules = mach.module_specification
+            and mach.module_specification.module_slots
+            or 0,
+            type = type,
+            usage = usage,
+            category = category,
+            drain = drain,
+            pollution = pollution,
+        }
+
+        process_producers(mach)
+    end
+
+    local mach = raw["reactor"][p.name]
+    if mach then
+        local usage = mach.consumption
+        usage = util.convert_energy(usage) / 1000
+        
+        if mach.burner then
+            t.factory = {
+                speed = 1.0,
+                modules = 0,
+                type = "burner",
+                category = mach.burner.fuel_category,
+                usage = usage
+            }
         else
-            print("$$$", entry.name)
+            t.factory = {
+                speed = 1.0,
+                modules = 0,
+                type = mach.energy_source.type,
+                category = mach.energy_source.fuel_category,
+                usage = usage
+            }
+        end
+
+        process_producers(mach)
+    end
+
+    local mod = raw["module"][p.name]
+    if mod then
+        local effect = mod.effect
+
+        local speed = effect.speed and effect.speed.bonus --or 0.0
+        local productivity = effect.productivity and effect.productivity.bonus --or 0.0
+        local consumption = effect.consumption and effect.consumption.bonus --or 0.0
+        local pollution = effect.pollution and effect.pollution.bonus --or 0.0
+
+        t.module = {
+            productivity = productivity,
+            speed = speed,
+            consumption = consumption,
+            pollution = pollution,
+        }
+
+        local limit = mod.limitation
+        if limit then
+            if not limitation["productivity-module"] then
+                limitation["productivity-module"] = limit
+            end
+            t.module.limitation = "productivity-module"
+        end
+    end
+
+    local main = p["main_product_ptr"]
+    if not main then
+        main = p;
+    end
+    local fuel_value = main.fuel_value
+    if fuel_value then
+        local fuel = util.convert_energy(fuel_value) / 1000000.0 -- to MJ
+        local category = main.fuel_category
+        local result = main.burnt_result
+
+        if category then
+            t.fuel = {
+                value = fuel,
+                category = category,
+                result = result
+            }
+    
+            if result then
+                local r = {
+                    id = t.id,
+                    result = result,
+                    category = category
+                }
+                table.insert(items_burnt, r)
+            end
+        end
+    end
+
+    local launch_product = main.rocket_launch_product
+    if launch_product then
+        local r = {                        
+            time = 40.33,
+            producers = { "rocket-silo" }
+        }
+        if launch_product.type == "item" then
+            r.id = launch_product.name
+            r.out = { [launch_product.name] = launch_product.amount }
+        else
+            r.id = launch_product[1]
+            r.out = { [launch_product[1]] = launch_product[2] }
+        end
+    
+        r["in"] = {
+            [t.id] = 1,
+            ["rocket-part"] = 100
+        }
+    
+        if r.out then
+            table.insert(recipes_extra, r)
         end
     end
 end
@@ -356,10 +686,6 @@ end
 
 
 local function save_icon(entry)
-    -- if entry.name ~= "fill-water-barrel" and entry.name ~= "sulfur-dioxide" and entry.name ~= "resource-refining"
-    --     and entry.name ~= "angels-components" and entry.name ~= "bob-gems" and entry.name ~= "bobmodules" then
-    --     return
-    -- end
     local icon = { id = entry.name, path = {} }
     local ptr = entry.icon and {entry} or entry.icons
     if not ptr then
@@ -369,6 +695,7 @@ local function save_icon(entry)
         end
     end
     local i_sz = entry.icon_size or 64
+    local serialized = ""
     for _, e in ipairs(ptr) do
         local t = {}
         t.icon = e.icon
@@ -377,21 +704,35 @@ local function save_icon(entry)
         t.tint = e.tint
         t.scale = e.scale -- may be nil
         t.shift = e.shift
+        if (e.tint) then
+            serialized = string.format("%s,%s.%s.%s.%s.%s.%s.%s.%s", serialized, t.icon, t.size, t.mips, t.tint.r, t.tint.g, t.tint.b, t.scale, t.shift)
+        else
+            serialized = string.format("%s,%s.%s.%s.%s.%s", serialized, t.icon, t.size, t.mips, t.scale, t.shift)
+        end
         table.insert(icon.path, t)
     end
-    table.insert(icons, icon)
+    
+    if img_cache[serialized] then
+        local ref = {
+            id = icon.id,
+            ref = img_cache[serialized]
+        }
+        table.insert(copies, ref)
+    else
+        img_cache[serialized] = icon.id
+        table.insert(icons, icon)
+    end
 end
 
 
 --[[ level 1 ]]----------------------------------------------------------------
 
 local function prepare()
-    -- удаление всех "лишних" записей
     local to_clean = {
         "noise-layer", "noise-expression", "explosion", "optimized-particle",
         "corpse", "virtual-signal", "tile", "decorative", "optimized-decorative",
         "tutorial", "custom-input", "gui-style", "font", "utility-constants",
-        "utility-sounds", "sprite", "god-controller", "editor-controller",
+        "utility-sounds", "god-controller", "editor-controller",
         "spectator-controller", "mouse-cursor", "ambient-sound", "wind-sound",
         "character-corpse", "character", "simple-entity","sticker", "shortcut",
         "trivial-smoke", "tree", "stream", "flying-text", "fire", "autoplace-control",
@@ -401,12 +742,10 @@ local function prepare()
         raw[to_clean[i]] = nil
     end
 
-    -- создание таблицы указателей на все записи с параметром "stack_size"
     dbglog(1, "process all items...")
     local i, j = 0, 0
     for _, r in pairs(raw) do
         for _, v in pairs(r) do
---            if v.stack_size and not util.contain(v.flags, "hidden") then
             if v.stack_size then
                 if "item" ~= v.type then
                     j = j + 1
@@ -414,6 +753,19 @@ local function prepare()
                     i = i + 1
                 end
                 items_ptr[v["name"]] = v
+            end
+
+            if v.rocket_launch_product then
+                items_as_ingredient[v.name] = true
+                if v.rocket_launch_product.type == "item" then
+                    items_as_product[v.rocket_launch_product.name] = true
+                else
+                    items_as_product[v.rocket_launch_product[1]] = true
+                end
+            end
+
+            if v.burnt_result then
+                items_as_product[v.burnt_result] = true
             end
         end
     end
@@ -463,12 +815,17 @@ local function process_recipes()
         if delivery_weapon_cannon then
             skip = true
         end
+        -- [BA] ignore void recipes
+        local void = string.find(rcp.name, "^void-");
+        if void then
+            skip = true
+        end
         if rcp["results"] and #rcp["results"] == 0 then
             dbglog(1, "Skipping recipe '" .. rcp.name .. "' because it has no results.\n")
             skip = true
         end
 
-        if (not (true == rcp.hidden))
+        if (not (true == rcp.hidden) or name == "rocket-part")
         and (not (false == rcp.enabled) or recipes_enabled[name])
         and (not skip)
         then
@@ -519,34 +876,31 @@ local function sort_recipes()
     end
     util.sort_by(t, 7, 6, 5, 4, 3, 2)
 
-    -- подсчёт предметов
     local c = 0
     for k, v in pairs(items_as_ingredient) do c = c + 1 end
     items_as_ingredient.count = c
     c = 0
     for k, v in pairs(items_as_product) do c = c + 1 end
     items_as_product.count = c
-    dbglog(1, ("\tfound %d ingridients and %d products\n")
+    dbglog(1, ("\tfound %d ingredients and %d products\n")
         :format(items_as_ingredient.count, items_as_product.count))
 
-    -- заполнение таблицы отсортированными рецептами
     dbglog(1, "clear items...\n")
     for i = 1, #t do
         local s = t[i]
         table.insert(recipes_sorted, {ptr = s[1], subgroup = s[4], group = s[6]})
 
-        save_icon(s[1]) -- значок в рецепте
+        save_icon(s[1])
 
-        -- очистка списка используемых предметов
         local name = s[1]["name"]
-        -- поиск по имени рецепта
+
         local ptr = get_item_ptr(name, nil, "3")
         if ptr then
             items_ready[name] = ptr
             items_as_ingredient[name] = nil
             items_as_product[name] = nil
         else
-            -- TODO: поиск по продуктам рецепта???
+            -- TODO
         end
     end
 
@@ -557,7 +911,7 @@ local function sort_recipes()
             items_used[k] = true
         end
     end
-    dbglog(2, "\t", c, " ingridients")
+    dbglog(2, "\t", c, " ingredients")
 
     c = 0
     for k, v in pairs(items_as_product) do
@@ -599,7 +953,7 @@ local function sort_items()
     util.sort_by(t, 7, 6, 5, 4, 3, 2)
 
     items_used = {}
-    dbglog(2, "\nother items: ")
+    dbglog(2, "other items: ")
     local s = {}
     for i = 1, #t do
         local ptr = t[i][1]
@@ -611,7 +965,7 @@ local function sort_items()
 end
 
 
-local function make_items() -- for Factorio Lab
+local function make_items()
     local out = {}
     local limitation = {}
     calculate_row() -- reset
@@ -630,240 +984,26 @@ local function make_items() -- for Factorio Lab
             t.category = r.group
             t.row = calculate_row(r.group, r.subgroup)
 
-            local belt = raw["transport-belt"][p.name]
-            if belt then
-                t.belt = belt and { speed = 480.0 * belt.speed }
-            end
-
-            local beacon = raw["beacon"][p.name]
-            if beacon then
-                local energy = beacon.energy_source.type
-                local usage = beacon.energy_usage
-                usage = util.convert_energy(usage) / 1000
-                t.beacon = {
-                    effectivity = beacon.distribution_effectivity,
-                    range = beacon.supply_area_distance,
-                    [energy] = usage,
-                    modules = beacon.module_specification.module_slots
-                }
-            end
-
-            local processed = false
-            local mach = raw["mining-drill"][p.name]
-            if mach then
-                processed = true
-                local energy = mach.energy_source.type
-                local pollution = mach.energy_source.emissions_per_minute
-                local usage = mach.energy_usage
-                usage = util.convert_energy(usage) / 1000
-                local drain = mach.energy_source.drain
-                t.factory = {
-                    speed = mach.mining_speed or 1.0,
-                    modules = mach.module_specification
-                    and mach.module_specification.module_slots
-                    or 0,
-                    [energy] = usage,
-                    drain = drain,
-                    pollution = pollution,
-                    mining = true
-                }
-
-                process_producers(mach, true)
-            end
-            mach = raw["offshore-pump"][p.name]
-            if mach then
-                processed = true
-                t.factory = {
-                    speed = mach.pumping_speed * 60, -- pumping_speed per tick
-                    modules = mach.module_specification
-                    and mach.module_specification.module_slots
-                    or 0,
-                    fluid = mach.fluid,
-                }
-                local energy = mach.energy_source and mach.energy_source.type
-                if energy then
-                    local pollution = mach.energy_source.emissions_per_minute
-                    local usage = mach.energy_usage
-                    usage = util.convert_energy(usage) / 1000
-                    local drain
-                    if "electric" == energy then
-                        drain = mach.energy_source.drain
-                        drain = drain and util.convert_energy(drain) or usage / 30.0
-                    end
-                    t.factory[energy] = usage
-                    t.factory.drain = drain
-                    t.factory.pollution = pollution
-                end
-
-                if mach.fluid then
-                    local r = {}
-                    r["id"] = mach.fluid
-                    r["time"] = 1
-                    r["producers"] = { mach.name }
-                    table.insert(recipes_extra, r)
-                end
-            end
-            mach = raw["furnace"][p.name]
-            if mach then
-                processed = true
-                local energy = mach.energy_source.type
-                local pollution = mach.energy_source.emissions_per_minute
-                local usage = mach.energy_usage
-                usage = util.convert_energy(usage) / 1000
-                local drain
-                if "electric" == energy then
-                    drain = mach.energy_source.drain
-                    drain = drain and util.convert_energy(drain) or usage / 30.0
-                end
-                t.factory = {
-                    speed = mach.crafting_speed or 1.0,
-                    modules = mach.module_specification
-                    and mach.module_specification.module_slots
-                    or 0,
-                    [energy] = usage,
-                    drain = drain,
-                    pollution = pollution,
-                }
-
-                process_producers(mach)
-            end
-            mach = raw["assembling-machine"][p.name]
-            if mach then
-                processed = true
-                local energy = mach.energy_source.type
-                local pollution = mach.energy_source.emissions_per_minute
-                local usage = mach.energy_usage
-                usage = util.convert_energy(usage) / 1000
-                local drain
-                if "electric" == energy then
-                    drain = mach.energy_source.drain
-                    drain = drain and util.convert_energy(drain) or usage / 30.0
-                end
-                t.factory = {
-                    speed = mach.crafting_speed or 1.0,
-                    modules = mach.module_specification
-                    and mach.module_specification.module_slots
-                    or 0,
-                    [energy] = usage,
-                    drain = drain,
-                    pollution = pollution,
-                }
-
-                process_producers(mach)
-            end
-            mach = raw["lab"][p.name]
-            if mach then
-                processed = true
-                local energy = mach.energy_source.type
-                local pollution = mach.energy_source.emissions_per_minute
-                local usage = mach.energy_usage
-                usage = util.convert_energy(usage) / 1000
-                local drain
-                if "electric" == energy then
-                    drain = mach.energy_source.drain
-                    drain = drain and util.convert_energy(drain) or usage / 30.0
-                end
-                t.factory = {
-                    speed = mach.researching_speed or 1.0,
-                    modules = mach.module_specification
-                    and mach.module_specification.module_slots
-                    or 0,
-                    [energy] = usage,
-                    drain = drain,
-                    pollution = pollution,
-                    research = true
-                }
-            end
-            mach = raw["boiler"][p.name]
-            if mach then
-                processed = true
-                local energy = mach.energy_source.type
-                local pollution = mach.energy_source.emissions_per_minute
-                local usage = mach.energy_consumption
-                usage = util.convert_energy(usage) / 1000
-                local drain
-                if "electric" == energy then
-                    drain = mach.energy_source.drain
-                    drain = drain and util.convert_energy(drain) or usage / 30.0
-                end
-                t.factory = {
-                    speed = 1.0,
-                    modules = 0,
-                    [energy] = usage,
-                    drain = drain,
-                    pollution = pollution,
-                }
-            end
-
-            if "rocket-silo" == p.name then
-                local mach = raw["rocket-silo"][p.name]
-                if mach then
-                    local energy = mach.energy_source.type
-                    local pollution = mach.energy_source.emissions_per_minute
-                    local usage = mach.energy_usage
-                    usage = util.convert_energy(usage) / 1000
-                    local drain
-                    if "electric" == energy then
-                        drain = mach.energy_source.drain
-                        drain = drain and util.convert_energy(drain) or usage / 30.0
-                    end
-                    t.factory = {
-                        speed = mach.crafting_speed or 1.0,
-                        modules = mach.module_specification
-                        and mach.module_specification.module_slots
-                        or 0,
-                        [energy] = usage,
-                        drain = drain,
-                        pollution = pollution,
-                    }
-
-                    process_producers(mach)
-                end
-            end
-
-            if "module" == r.subgroup
-            or (p["main_product_ptr"] and "module" == p["main_product_ptr"]["type"]) then
-                local mod = raw["module"][p.name]
-                if mod then
-                    local effect = mod.effect
-
-                    local speed = effect.speed and effect.speed.bonus --or 0.0
-                    local productivity = effect.productivity and effect.productivity.bonus --or 0.0
-                    local consumption = effect.consumption and effect.consumption.bonus --or 0.0
-                    local pollution = effect.pollution and effect.pollution.bonus --or 0.0
-
-                    t.module = {
-                        productivity = productivity,
-                        speed = speed,
-                        consumption = consumption,
-                        pollution = pollution,
-                    }
-
-                    local limit = mod.limitation
-                    if limit then
-                        if not limitation["productivity-module"] then
-                            limitation["productivity-module"] = limit
-                        end
-                        t.module.limitation = "productivity-module"
-                    end
-                end
-            end
-
-            local fuel_value = p["main_product_ptr"] and p["main_product_ptr"]["fuel_value"]
-            if fuel_value then
-                local fuel = util.convert_energy(fuel_value) / 1000000.0 -- to MJ
-                t.fuel = fuel
-            end
+            process_item(p, t, limitation)
 
             table.insert(out, t)
         end
     end
 
-    -- now raw-recources, etc
+    -- now raw-resources, etc
     for i = 1, #items_used do
         local item = items_used[i]
         local p = item[1]
         local t = {}
+
+        if not p.localised_name then
+            if raw["ammo-turret"][p.name] and raw["ammo-turret"][p.name].localised_name then
+                p.localised_name = raw["ammo-turret"][p.name].localised_name
+            end
+            if p.localised_name then
+                dbglog(1, "Found localised name for " .. p.name .. "\n")
+            end
+        end
 
         t.id = p.name
         t.name = L(p)
@@ -872,11 +1012,7 @@ local function make_items() -- for Factorio Lab
         t.subgroup = p.subgroup
         t.row = calculate_row("other", item[2])
 
-        local fuel_value = p.fuel_value
-        if fuel_value then
-            local fuel = util.convert_energy(fuel_value) / 1000000.0 -- to MJ
-            t.fuel = fuel
-        end
+        process_item(p, t, limitation)
 
         table.insert(out, t)
     end
@@ -885,7 +1021,7 @@ local function make_items() -- for Factorio Lab
 end
 
 
-local function make_recipes() -- for Factorio Lab
+local function make_recipes()
     local out = {}
 
     for i = 1, #recipes_sorted do
@@ -958,7 +1094,7 @@ local function make_recipes() -- for Factorio Lab
         end
     end
 
-    -- now raw-recources, etc
+    -- now raw-resources, etc
     for i = 1, #items_used do
         local item = items_used[i]
 
@@ -1021,6 +1157,26 @@ local function make_recipes() -- for Factorio Lab
         end -- if "raw-resource"
     end -- for i
 
+    for i = 1, #items_burnt do
+        local burnt = items_burnt[i]
+        local cat = burnt.category
+        if burners[cat] then
+            for b = 1, #burners[cat] do
+                local burner = burners[cat][b]
+                local r = {
+                    id = burnt.result,
+                    time = 1,
+                    ["in"] = { [burnt.id] = 0 },
+                    ["out"] = { [burnt.result] = 0},
+                    producers = { burner.id }
+                }
+                table.insert(out, r)
+            end
+        else
+            dbglog(1, "failed to find burners for result: " .. burnt.id .. "\n")
+        end
+    end
+
     for _, e in pairs(recipes_extra) do
         table.insert(out, e)
     end
@@ -1079,22 +1235,12 @@ local function main()
     -- save_icon(raw["technology"]["worker-robots-speed-6"])
 
     -- PRESET FOR APP DATA
-    -- save_icon(raw["recipe"]["lab"])
-    -- save_icon(raw["recipe"]["iron-gear-wheel"])
-    -- save_icon(raw["recipe"]["iron-plate"])
-    -- save_icon(raw["recipe"]["transport-belt"])
     -- save_icon(raw["recipe"]["pipe"])
-    -- save_icon(raw["recipe"]["cargo-wagon"])
-    -- save_icon(raw["recipe"]["fluid-wagon"])
-    -- save_icon(raw["recipe"]["assembling-machine-1"])
-    -- save_icon(raw["recipe"]["electric-mining-drill"])
-    -- save_icon(raw["recipe"]["substation"])
-    -- save_icon(raw["fluid"]["steam"])
+    -- save_icon(raw["item-group"]["production"])
     -- save_icon(raw["recipe"]["inserter"])
     -- save_icon(raw["recipe"]["long-handed-inserter"])
     -- save_icon(raw["recipe"]["fast-inserter"])
     -- save_icon(raw["recipe"]["stack-inserter"])
-    -- save_icon(raw["recipe"]["speed-module-3"])
     -- local icon, u
     -- u = raw["utility-sprites"]["default"]["slot_icon_module"]
     -- icon = {
@@ -1125,6 +1271,22 @@ local function main()
     trim(i, r)
 
     local ic = gd_image.generate_image(icons)
+    dbglog(1, string.format("processing %s duplicate icons...\n", #copies))
+    for k, v in ipairs(copies) do
+        local ref
+        for _, u in ipairs(ic) do
+            if u.id == v.ref then
+                ref = u
+                break;
+            end
+        end
+        local t = {
+            id = v.id,
+            position = ref.position,
+            color = ref.color
+        }
+        table.insert(ic, t)
+    end
 
     local out = {}
     out.categories = categories_used or {}

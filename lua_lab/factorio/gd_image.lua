@@ -57,6 +57,7 @@ local function copy_icon(x, y, SZ, mult, icon, canvas)
     local layers = 0
     local tSZ
     local temp
+    local bobmodules
 
     for _, v in ipairs(icon.path) do
         layers = layers + 1
@@ -68,6 +69,11 @@ local function copy_icon(x, y, SZ, mult, icon, canvas)
 
         -- Convert image to true color
         local size = v.size or 32
+        -- [BA] Fix for modules size
+        if path == "C:/Program Files (x86)/Steam/steamapps/common/Factorio/data/base/graphics/technology/module.png" and size ~= 256 then
+            size = 256
+            bobmodules = true
+        end
         local png2 = gd.createTrueColor(size, size)
         png2:fill(0, 0, gd.TRANSPARENT)
         png2:saveAlpha(true)
@@ -83,6 +89,9 @@ local function copy_icon(x, y, SZ, mult, icon, canvas)
         local mult = 1
         if tSZ == 64 and size ~= 32 and size <= tSZ and scale ~= 1.0 and size * scale < 32 then
             mult = 2
+        end
+        if bobmodules and _ > 1 then
+            mult = mult * 2
         end
         local dstW = size * scale * mult
         if not tSZ then
@@ -161,10 +170,11 @@ local function generate_image(icons)
 
             local dstX, dstY, layers, tint = copy_icon(x, y, SZ, 1, icon, canvas)
 
-            local t = {}
-            t.id = icon.id
-            t.position = ("%dpx %dpx"):format(-dstX, -dstY)
-            t.color = rgbToHex(tint)
+            local t = {
+                id = icon.id,
+                position = ("%dpx %dpx"):format(-dstX, -dstY),
+                color = rgbToHex(tint)
+            }
             table.insert(out, t)
 
             dbglog(-1, ("%2d|"):format(layers))

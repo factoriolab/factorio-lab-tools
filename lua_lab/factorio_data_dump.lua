@@ -179,7 +179,7 @@ _G.table_size = function (t)
     return count
 end
 
-local _F = { mods = { base = "1.0.0" } } -- shared env for every called mod
+local _F = { mods = { base = "1.1.0" } } -- shared env for every called mod
 local _E
 
 _require = function(m, skip, opt)
@@ -235,6 +235,7 @@ _require = function(m, skip, opt)
     if _E.prev then
         table.insert(mod_dir, ("%s/?.lua"):format(_E.prev))
     end
+    table.insert(mod_dir, ("%s/data/core/?.lua"):format(args.gamedir))
     table.insert(mod_dir, ("%s/data/core/lualib/?.lua"):format(args.gamedir))
 
     local cached
@@ -383,7 +384,7 @@ do
     unrequire("factorio.settings_parser")
 end
 
-dbglog(1, "mods settins loaded\n")
+dbglog(1, "mods settings loaded\n")
 
 
 --[[ get mod load order ]]
@@ -496,6 +497,12 @@ do
                     if not deps then deps = {("base >= %s"):format(mods_used["base"].ver)} end
                     for _, v in ipairs(deps) do
                         local pfx, name, cond, ver = v:match("([()!?]*)[ ]*([^%s]+)[%s]*([=<>]*)[ ]*(.*)")
+                        if v == "A Sea Block Config" then
+                            name = v
+                            pfx = nil
+                            cond = nil
+                            ver = nil
+                        end
                         if mod_needed(name, pfx, mod, cond, ver) then
                             table.insert(load_order[mod], name)
                         end
@@ -573,8 +580,7 @@ if args.dump then
 custom-input decorative editor-controller explosion flying-text font god-controller gui-style
 highlight-box leaf-particle map-gen-presets map-settings mouse-cursor noise-expression noise-layer
 optimized-decorative optimized-particle particle particle-source rail-remnants rocket-silo-rocket
-rocket-silo-rocket-shadow shortcut smoke smoke-with-trigger spectator-controller speech-bubble
-sprite sticker tile tile-effect trigger-target-type tutorial unit unit unit-spawner
+rocket-silo-rocket-shadow shortcut smoke smoke-with-trigger spectator-controller speech-bubble sticker tile tile-effect trigger-target-type tutorial unit unit unit-spawner
 utility-constants utility-sounds virtual-signal wind-sound]]
             for s in str:gmatch("[a-z_-]+") do
                 ptr[s] = nil
@@ -606,7 +612,7 @@ prepared_alternative_sound prepared_animation prepared_muzzle_animation_shift
 prepared_sound preparing_animation preparing_muzzle_animation_shift preparing_sound
 rail_overlay_animations resistances right_shift_symbol_sprites secondary_pictures
 selection_box selection_box_offsets shadow shadow_animations shadow_idle shadow_in_motion
-small_tree_fire_pictures smoke spine_animation sprite sprites stand_by_light
+small_tree_fire_pictures smoke spine_animation sprites stand_by_light
 starting_attack_animation starting_attack_sound stop_trigger structure top_animations
 track_particle_triggers turret_animation variations vehicle_impact_sound
 vertical_animation vertical_rail_animation_left vertical_rail_animation_right
