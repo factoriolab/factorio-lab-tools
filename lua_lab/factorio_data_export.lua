@@ -318,7 +318,7 @@ local function process_producers(entry, drill)
     local type = (entry.energy_source and entry.energy_source.type) or "burner"
     local usage = entry.consumption
     if type == "burner" and usage then
-        local cat = ((entry.energy_source and entry.energy_source.fuel_category) or entry.burner.fuel_category) or "chemical"
+        local cat = ((entry.energy_source and entry.energy_source.fuel_category) or (entry.burner and entry.burner.fuel_category)) or "chemical"
         if not burners[cat] then
             burners[cat] = {}
         end
@@ -711,6 +711,45 @@ local function save_icon(entry)
         end
         table.insert(icon.path, t)
     end
+
+    if entry.type == "recipe" then
+        local item = items_ptr[entry.name]
+        if item then
+            local icon2 = { id = entry.name, path = {} }
+            local ptr2 = item.icon and {item} or item.icons
+            local i_sz2 = item.icon_size or 64
+            local serialized2 = ""
+            for _, e in ipairs(ptr2) do
+                local t = {}
+                t.icon = e.icon
+                t.size = e.icon_size or i_sz2
+                t.mips = e.icon_mipmaps or 1
+                t.tint = e.tint
+                t.scale = e.scale -- may be nil
+                t.shift = e.shift
+                if (e.tint) then
+                    serialized2 = string.format("%s,%s.%s.%s.%s.%s.%s.%s.%s", serialized2, t.icon, t.size, t.mips, t.tint.r, t.tint.g, t.tint.b, t.scale, t.shift)
+                else
+                    serialized2 = string.format("%s,%s.%s.%s.%s.%s", serialized2, t.icon, t.size, t.mips, t.scale, t.shift)
+                end
+                table.insert(icon2.path, t)
+            end
+
+            if serialized ~= serialized2 then
+                icon.id = icon.id .. '|recipe'
+                if img_cache[serialized2] then
+                    local ref = {
+                        id = icon2.id,
+                        ref = img_cache[serialized2]
+                    }
+                    table.insert(copies, ref)
+                else
+                    img_cache[serialized2] = icon2.id
+                    table.insert(icons, icon2)
+                end
+            end
+        end
+    end
     
     if img_cache[serialized] then
         local ref = {
@@ -980,6 +1019,7 @@ local function make_items()
 
         local item = items_ready[p.name]
         if item then
+            t.name = L(item)
             t.stack = item.stack_size
             t.category = r.group
             t.row = calculate_row(r.group, r.subgroup)
@@ -1028,7 +1068,7 @@ local function make_recipes()
         local r = recipes_sorted[i].ptr
         local t = {}
         t.id = r.name
-
+        t.name = r.loc_name
         t.time = r.normal.energy_required or 0.5
         local ings = r.normal.ingredients
         for j = 1, #ings do
@@ -1119,6 +1159,7 @@ local function make_recipes()
                 end
                 local t = {}
                 t.id = p.name
+                t.name = p.loc_name
                 t.mining = true
 
                 local mine = res.minable
@@ -1163,8 +1204,10 @@ local function make_recipes()
         if burners[cat] then
             for b = 1, #burners[cat] do
                 local burner = burners[cat][b]
+                local n = items_ptr[burnt.result]
                 local r = {
                     id = burnt.result,
+                    name = L(n),
                     time = 1,
                     ["in"] = { [burnt.id] = 0 },
                     ["out"] = { [burnt.result] = 0},
