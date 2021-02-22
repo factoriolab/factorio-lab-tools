@@ -98,16 +98,6 @@ local function set_ProductPrototype(ptr)
                 p[1] = nil
                 p[2] = nil
             end
-            if not p["amount"] then
-                local min = p["amount_min"]
-                local max = p["amount_max"]
-                max = max < min and min or max
-                p["amount"] = (max - min)
-            end
-            if p["probability"] then
-                p["amount"] = p["amount"] * p["probability"]
-            end
-
             items_as_product[p["name"]] = true
         end
     elseif ptr["result"] then
@@ -1094,6 +1084,9 @@ local function make_recipes()
                 else
                     add = res[j].amount
                 end
+                if res[j].probability then
+                    add = add * res[j].probability
+                end
                 if t["out"][res[j].name] then
                     t["out"][res[j].name] = t["out"][res[j].name] + add
                 else
@@ -1103,24 +1096,37 @@ local function make_recipes()
         end
 
         if r.expensive ~= r.normal then
-            t["expensive"] = {}
+            t.expensive = {}
             local et = r.expensive.energy_required or 0.5
             if et ~= t.time then
-                t["expensive"]["time"] = et
+                t.expensive["time"] = et
             end
             ings = r.expensive.ingredients
             for j = 1, #ings do
-                if not t["expensive"]["in"] then
-                    t["expensive"]["in"] = {}
+                if not t.expensive["in"] then
+                    t.expensive["in"] = {}
                 end
                 local ing = ings[j]
-                t["expensive"]["in"][ing.name] = ing.amount
+                t.expensive["in"][ing.name] = ing.amount
             end
             res = r.expensive.results
             if #res > 1 or res[1].name ~= r.name or res[1].amount > 1 then
-                t["expensive"]["out"] = {}
+                t.expensive.out = {}
                 for j = 1, #res do
-                    t["expensive"]["out"][res[j].name] = res[j].amount
+                    local add;
+                    if res[j].amount_min then
+                        add = (res[j].amount_max + res[j].amount_min) / 2
+                    else
+                        add = res[j].amount
+                    end
+                    if res[j].probability then
+                        add = add * res[j].probability
+                    end
+                    if t.expensive["out"][res[j].name] then
+                        t.expensive["out"][res[j].name] = t.expensive["out"][res[j].name] + add
+                    else
+                        t.expensive["out"][res[j].name] = add
+                    end
                 end
             end
         end
