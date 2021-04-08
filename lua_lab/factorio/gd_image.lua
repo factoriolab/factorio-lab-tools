@@ -55,9 +55,35 @@ local function copy_icon(x, y, SZ, mult, icon, canvas)
 
     -- draw multi-layers images
     local layers = 0
-    local tSZ
+    local dSZ = 32 -- base size
+    local tSZ -- projected image size
+    local iSZ -- image size fitting shifts
     local temp
-    local bobmodules
+
+    for _, v in ipairs(icon.path) do
+        local size = v.size or 32
+        if _ == 1 and v.scale then
+            dSZ = size * v.scale
+        end
+        local scale = v.scale or 1.0
+        local dstW = size * scale
+        if not tSZ then
+            tSZ = dstW
+            iSZ = tSZ
+        end
+        -- adjust image size to fit all icons with shifts
+        if v.shift then
+            local off = v.shift[1]
+            if off < 0 then off = off * -1 end
+            local alt = v.shift[2]
+            if alt < 0 then alt = alt * -1 end
+            if alt > off then off = alt end
+            local new = ((dstW / 2) + off) * 2
+            if new > iSZ then
+                iSZ = new
+            end
+        end
+    end
 
     for _, v in ipairs(icon.path) do
         layers = layers + 1
@@ -69,48 +95,36 @@ local function copy_icon(x, y, SZ, mult, icon, canvas)
 
         -- Convert image to true color
         local size = v.size or 32
-        -- [BA] Fix for modules size
-        if path == "C:/Program Files (x86)/Steam/steamapps/common/Factorio/data/base/graphics/technology/module.png" and size ~= 256 then
-            size = 256
-            bobmodules = true
-        end
         local png2 = gd.createTrueColor(size, size)
         png2:fill(0, 0, gd.TRANSPARENT)
         png2:saveAlpha(true)
         png2:copyResampled(png, 0, 0, 0, 0, size, size, size, size)
         png = png2
-        
+
         -- apply tint
         if v.tint then
             apply_tint(png, v.tint)
         end
 
         local scale = v.scale or 1.0
-        local mult = 1
-        if tSZ == 64 and size ~= 32 and size <= tSZ and scale ~= 1.0 and size * scale < 32 then
-            mult = 2
+        if v.scale then
+            scale = scale * tSZ / dSZ
         end
-        if bobmodules and _ > 1 then
-            mult = mult * 2
-        end
-        local dstW = size * scale * mult
-        if not tSZ then
-            tSZ = dstW
-        end
+        local dstW = size * scale
 
-        local dc = math.floor(tSZ * 0.5 * (1.0 - (dstW / tSZ)))
+        local dc = math.floor(iSZ * 0.5 * (1.0 - (dstW / iSZ)))
 
         -- shift scaled icon
         local vx, vy = 0, 0
         if v.shift then
-            vx = v.shift[1] * mult
-            vy = v.shift[2] * mult
+            vx = v.shift[1]
+            vy = v.shift[2]
         end
         local dx = math.floor(dc + vx)
         local dy = math.floor(dc + vy)
 
         if not temp then
-            temp = gd.createTrueColor(tSZ, tSZ)
+            temp = gd.createTrueColor(iSZ, iSZ)
             temp:fill(0, 0, gd.TRANSPARENT)
             temp:saveAlpha(true)
         end
@@ -118,7 +132,7 @@ local function copy_icon(x, y, SZ, mult, icon, canvas)
         temp:copyResampled(png, dx, dy, 0, 0, dstW, dstW, size, size)
     end
 
-    canvas:copyResampled(temp, dstX, dstY, 0, 0, SZ, SZ, tSZ, tSZ)
+    canvas:copyResampled(temp, dstX, dstY, 0, 0, SZ, SZ, iSZ, iSZ)
 
     local tint = {}
     if canvas then
@@ -126,7 +140,7 @@ local function copy_icon(x, y, SZ, mult, icon, canvas)
         local pixel = gd.createTrueColor(1, 1)
         pixel:fill(0, 0, gd.TRANSPARENT)
         pixel:saveAlpha(true)
-        pixel:copyResampled(temp, 0, 0, 0, 0, 1, 1, tSZ, tSZ)
+        pixel:copyResampled(temp, 0, 0, 0, 0, 1, 1, iSZ, iSZ)
         local p = pixel:getPixel(0, 0)
         tint = { pixel:red(p), pixel:green(p), pixel:blue(p) }
     end
