@@ -1,6 +1,6 @@
-# Factorio Lab Tools
+# FactorioLab Tools
 
-This repository contains a tool used for generating JSON data and icons for the Factorio Lab calculator. It is forked from [this repository](https://bitbucket.org/hhrhhr/factorio-lab-tools) by Dmitry Zaitsev (@hhrhhr).
+This repository contains a tool used for generating JSON data and icons for the FactorioLab calculator. It is forked from [this repository](https://bitbucket.org/hhrhhr/factorio-lab-tools) by Dmitry Zaitsev (@hhrhhr).
 
 ## Prepare
 
