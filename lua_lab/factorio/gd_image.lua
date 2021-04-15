@@ -62,8 +62,12 @@ local function copy_icon(x, y, SZ, mult, icon, canvas)
 
     for _, v in ipairs(icon.path) do
         local size = v.size or 32
-        if _ == 1 and v.scale then
-            dSZ = size * v.scale
+        if _ == 1 then
+            if v.scale then
+                dSZ = size * v.scale
+            elseif v.mips == 1 then
+                dSZ = size
+            end
         end
         local scale = v.scale or 1.0
         local dstW = size * scale
@@ -107,9 +111,11 @@ local function copy_icon(x, y, SZ, mult, icon, canvas)
         end
 
         local scale = v.scale or 1.0
+        local mult = 1.0
         if v.scale then
-            scale = scale * tSZ / dSZ
+            mult = tSZ / dSZ
         end
+        scale = scale * mult
         local dstW = size * scale
 
         local dc = math.floor(iSZ * 0.5 * (1.0 - (dstW / iSZ)))
@@ -117,8 +123,8 @@ local function copy_icon(x, y, SZ, mult, icon, canvas)
         -- shift scaled icon
         local vx, vy = 0, 0
         if v.shift then
-            vx = v.shift[1]
-            vy = v.shift[2]
+            vx = v.shift[1] * mult
+            vy = v.shift[2] * mult
         end
         local dx = math.floor(dc + vx)
         local dy = math.floor(dc + vy)

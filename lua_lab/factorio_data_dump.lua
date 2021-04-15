@@ -474,7 +474,6 @@ do
                 end
                 -- zip have a low priority
                 if ext and (not mods_used[mod]) or (mods_used[mod] and "dir" == ext) then
-
                     local mpath = ("%s/%s"):format(args.moddir, f)
                     local used, data = {}
                     if "dir" == ext then
@@ -496,13 +495,7 @@ do
                     local deps = j.dependencies
                     if not deps then deps = {("base >= %s"):format(mods_used["base"].ver)} end
                     for _, v in ipairs(deps) do
-                        local pfx, name, cond, ver = v:match("([()!?]*)[ ]*([^%s]+)[%s]*([=<>]*)[ ]*(.*)")
-                        if v == "A Sea Block Config" then
-                            name = v
-                            pfx = nil
-                            cond = nil
-                            ver = nil
-                        end
+                        local pfx, name, cond, ver = v:match("([()!?]*)[ ]*([^=<>]+[^%s=<>])[ ]*([=<>]*)[ ]*(.*)")
                         if mod_needed(name, pfx, mod, cond, ver) then
                             table.insert(load_order[mod], name)
                         end

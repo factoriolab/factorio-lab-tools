@@ -124,7 +124,9 @@ local function set_IconSpecification(ptr, from)
         ico = get_IconSpecification(from)
     end
     if not ico then
-        error(ptr.name .. " and " .. from.name .. " have no icon(s)!")
+        print(debug.traceback())
+        local from_name = (from and from.name) or '<nil>'
+        error(ptr.name .. " and " .. from_name .. " has no icon(s)!")
     end
 
     ptr.icon = nil
@@ -182,6 +184,9 @@ local function set_recipe_data(ptr, mode)
     end
 
     local main_product = ptr["main_product"]
+    if not main_product then
+        main_product = ptr[mode]["main_product"]
+    end
     local product_count = #ptr[mode]["results"]
 
     if product_count > 1 then
@@ -765,16 +770,21 @@ local function prepare()
         "spectator-controller", "mouse-cursor", "ambient-sound", "wind-sound",
         "character-corpse", "character", "simple-entity","sticker", "shortcut",
         "trivial-smoke", "tree", "stream", "flying-text", "fire", "autoplace-control",
-        "crash-site",
+        "crash-site", "projectile"
     }
     for i = 1, #to_clean do
         raw[to_clean[i]] = nil
     end
 
-    dbglog(1, "process all items...")
+    dbglog(1, "process all items...\n")
     local i, j = 0, 0
     for _, r in pairs(raw) do
         for _, v in pairs(r) do
+            if v.stack_size and v.type == 'fluid' then
+                dbglog(1, "Setting fluid stack size to nil: '", v.name, "'\n")
+                v.stack_size = nil
+            end
+
             if v.stack_size then
                 if "item" ~= v.type then
                     j = j + 1
@@ -1159,9 +1169,26 @@ local function make_recipes()
         end
 
         if res then
-            if "raw-resource" == item[2] or "raw-material" == item[2] then
-                if item[2] == "raw-material" then
-                    dbglog(1, "Processing raw material '" .. p.name .. "' as raw resource\n")
+            if res.category == "basic-fluid" or res.category == "water" then
+                if res.category == "water" then
+                    dbglog(1, "Processing water '" .. p.name .. "' as basic-fluid\n")
+                end
+                local t = {}
+                t.id = p.name
+                t.mining = true
+                t.time = res.minable.mining_time
+                t.out =  { [p.name] = 10 };
+
+                local cat = res.category
+                if producers[cat] then
+                    t["producers"] = { table.unpack(producers[cat]) }
+                    table.insert(out, t)
+                else
+                    dbglog(1, "failed to find producers for resource: " .. p.name .. "\n")
+                end
+            else
+                if item[2] ~= "raw-resource" then
+                    dbglog(1, "Processing " .. item[2] .. " '" .. p.name .. "' as raw resource\n")
                 end
                 local t = {}
                 t.id = p.name
@@ -1180,20 +1207,6 @@ local function make_recipes()
                 end
 
                 local cat = p.category or "basic-solid"
-                if producers[cat] then
-                    t["producers"] = { table.unpack(producers[cat]) }
-                    table.insert(out, t)
-                else
-                    dbglog(1, "failed to find producers for resouce: " .. p.name .. "\n")
-                end
-            elseif res.category ~= nil then
-                local t = {}
-                t.id = p.name
-                t.mining = true
-                t.time = res.minable.mining_time
-                t.out =  { [p.name] = 10 };
-
-                local cat = res.category
                 if producers[cat] then
                     t["producers"] = { table.unpack(producers[cat]) }
                     table.insert(out, t)

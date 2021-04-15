@@ -67,11 +67,11 @@ local function get_loc_name(section, id, mute)
         -- [BOBS/ANGELS] use recipe id to build name when we can't find one
         loc = ""
         for w in string.gmatch(id .. "-", "(%w+)-") do
-            local cap = w:gsub("^%l", string.upper)
             if loc == "" then
+                local cap = w:gsub("^%l", string.upper)
                 loc = cap
             else
-                loc = loc .. " " .. cap
+                loc = loc .. " " .. w
             end
         end
         dbglog(1, "Using parsed id, result: '" .. loc .. "'\n")
