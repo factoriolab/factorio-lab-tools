@@ -123,7 +123,7 @@ function translate(entry, mute) -- old args: mod, section, id, dbg
             return loc_name[2]
         end
         local v = loc_name[2][k/1]
-        if v then
+        if v and v ~= '' then
             local sect, name = v:match("(.+)%.(.+)")
             loc = get_loc_name({sect}, name, mute)
 

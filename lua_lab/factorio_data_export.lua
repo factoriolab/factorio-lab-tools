@@ -23,6 +23,7 @@ local items_as_product = {}
 local items_used = {}
 local items_ready = {}
 local items_burnt = {}
+local items_launch = {}
 
 local recipes_enabled = {}
 local recipes_ptr = {}
@@ -35,6 +36,7 @@ local icons = {}
 local img_cache = {}
 local copies = {}
 local producers = {}
+local silos = {}
 local burners = {}
 local launches = {}
 
@@ -125,7 +127,7 @@ local function set_IconSpecification(ptr, from)
     end
     if not ico then
         print(debug.traceback())
-        local from_name = (from and from.name) or '<nil>'
+        local from_name = (from and from.name) or "<nil>"
         error(ptr.name .. " and " .. from_name .. " has no icon(s)!")
     end
 
@@ -186,6 +188,9 @@ local function set_recipe_data(ptr, mode)
     local main_product = ptr["main_product"]
     if not main_product then
         main_product = ptr[mode]["main_product"]
+    end
+    if not main_product or main_product == "" then
+        main_product = ptr[mode]["result"]
     end
     local product_count = #ptr[mode]["results"]
 
@@ -424,10 +429,13 @@ local function process_item(p, t, limitation)
         end
 
         if mach.fluid then
-            local r = {}
-            r["id"] = mach.fluid
-            r["time"] = 1
-            r["producers"] = { mach.name }
+            local f = get_item_ptr(mach.fluid)
+            local r = {
+                id = mach.fluid,
+                name = L(f),
+                time = 1,
+                producers = { mach.name }
+            }
             table.insert(recipes_extra, r)
         end
     end
@@ -557,6 +565,38 @@ local function process_item(p, t, limitation)
         if "burner" == type and not category then
             category = "chemical"
         end
+
+        -- Calculate number of ticks for launch
+        -- Based on https://github.com/ClaudeMetz/FactoryPlanner/blob/master/modfiles/data/handlers/generator_util.lua#L335
+        local ticks = 2435 -- default to vanilla rocket silo value
+        local rocket = mach.rocket_entity
+        if rocket then
+            local rocket_proto = raw["rocket-silo-rocket"][rocket]
+                        
+            local rocket_flight_threshold = 0.5  -- hardcoded in the game files
+            local launch_steps = {
+                lights_blinking_open = (1 / mach.light_blinking_speed) + 1,
+                doors_opening = (1 / mach.door_opening_speed) + 1,
+                doors_opened = (mach.rocket_rising_delay or 30) + 1,
+                rocket_rising = (1 / rocket_proto.rising_speed) + 1,
+                rocket_ready = 14,  -- estimate for satellite insertion delay
+                launch_started = (mach.launch_wait_time or 120) + 1,
+                engine_starting = (1 / rocket_proto.engine_starting_speed) + 1,
+                -- This calculates a fractional amount of ticks. Also, math.log(x) calculates the natural logarithm
+                rocket_flying = math.log(1 + rocket_flight_threshold * rocket_proto.flying_acceleration
+                  / rocket_proto.flying_speed) / math.log(1 + rocket_proto.flying_acceleration),
+                lights_blinking_close = (1 / mach.light_blinking_speed) + 1,
+                doors_closing = (1 / mach.door_opening_speed) + 1
+            }
+        
+            local total_ticks = 0
+            for _, ticks_taken in pairs(launch_steps) do
+                total_ticks = total_ticks + ticks_taken
+            end
+        
+            ticks = math.floor(total_ticks + 0.5)
+        end
+
         t.factory = {
             speed = mach.crafting_speed or 1.0,
             modules = mach.module_specification
@@ -567,9 +607,15 @@ local function process_item(p, t, limitation)
             category = category,
             drain = drain,
             pollution = pollution,
+            silo = {
+                parts = mach.rocket_parts_required,
+                launch = ticks,
+            }
         }
 
         process_producers(mach)
+
+        table.insert(silos, { name = p.name, parts = mach.rocket_parts_required })
     end
 
     local mach = raw["reactor"][p.name]
@@ -625,7 +671,7 @@ local function process_item(p, t, limitation)
 
     local main = p["main_product_ptr"]
     if not main then
-        main = p;
+        main = p
     end
     local fuel_value = main.fuel_value
     if fuel_value then
@@ -652,27 +698,55 @@ local function process_item(p, t, limitation)
     end
 
     local launch_product = main.rocket_launch_product
-    if launch_product then
-        local r = {                        
-            time = 40.33,
-            producers = { "rocket-silo" }
-        }
-        if launch_product.type == "item" then
-            r.id = launch_product.name
-            r.out = { [launch_product.name] = launch_product.amount }
-        else
-            r.id = launch_product[1]
-            r.out = { [launch_product[1]] = launch_product[2] }
+    local launch_products = main.rocket_launch_products
+    if launch_product or launch_products then
+        local launch = { input = t.id, products = {} }
+        if launch_product then
+            local p = launch_product
+            if p.name then
+                local qty
+
+                if p.amount_min then
+                    qty = (p.amount_max + p.amount_min) / 2
+                else
+                    qty = p.amount
+                end
+
+                if p.probability then
+                    qty = qty * p.probability
+                end
+
+                launch.product = p.name
+                launch.products[p.name] = qty
+            else
+                launch.product = p[1]
+                launch.products[p[1]] = p[2]
+            end
         end
+        if launch_products then
+            for i = 1, #launch_products do
+                local p = launch_products[i]
+                if p.name then
+                    local qty
     
-        r["in"] = {
-            [t.id] = 1,
-            ["rocket-part"] = 100
-        }
+                    if p.amount_min then
+                        qty = (p.amount_max + p.amount_min) / 2
+                    else
+                        qty = p.amount
+                    end
     
-        if r.out then
-            table.insert(recipes_extra, r)
+                    if p.probability then
+                        qty = qty * p.probability
+                    end
+                    
+                    launch.products[p.name] = (launch.products[p.name] or 0) + qty
+                else
+                    launch.products[p[1]] = (launch.products[p[1]] or 0) + p[2]
+                end
+            end
         end
+        
+        table.insert(items_launch, launch)
     end
 end
 
@@ -680,13 +754,16 @@ end
 --[[ icons ]]--------------------------
 
 
-local function save_icon(entry)
-    local icon = { id = entry.name, path = {} }
+local function save_icon(entry, id)
+    if not id then
+        id = entry.name
+    end
+    local icon = { id = id, path = {} }
     local ptr = entry.icon and {entry} or entry.icons
     if not ptr then
         ptr = entry.main_product_ptr.icons
         if not ptr then
-            error(entry.name .. ", no icon(s) !!")
+            error(id .. ", no icon(s) !!")
         end
     end
     local i_sz = entry.icon_size or 64
@@ -708,9 +785,9 @@ local function save_icon(entry)
     end
 
     if entry.type == "recipe" then
-        local item = items_ptr[entry.name]
+        local item = items_ptr[id]
         if item then
-            local icon2 = { id = entry.name, path = {} }
+            local icon2 = { id = id, path = {} }
             local ptr2 = item.icon and {item} or item.icons
             local i_sz2 = item.icon_size or 64
             local serialized2 = ""
@@ -731,7 +808,7 @@ local function save_icon(entry)
             end
 
             if serialized ~= serialized2 then
-                icon.id = icon.id .. '|recipe'
+                icon.id = icon.id .. "|recipe"
                 if img_cache[serialized2] then
                     local ref = {
                         id = icon2.id,
@@ -780,7 +857,7 @@ local function prepare()
     local i, j = 0, 0
     for _, r in pairs(raw) do
         for _, v in pairs(r) do
-            if v.stack_size and v.type == 'fluid' then
+            if v.stack_size and v.type == "fluid" then
                 dbglog(1, "Setting fluid stack size to nil: '", v.name, "'\n")
                 v.stack_size = nil
             end
@@ -846,17 +923,22 @@ local function process_recipes()
             skip = true
         end
         -- [SE] ignore SE delivery cannon recipes
-        local delivery_cannon = string.find(rcp.name, "^se%-delivery%-cannon%-pack%-");
+        local delivery_cannon = string.find(rcp.name, "^se%-delivery%-cannon%-pack%-")
         if delivery_cannon then
             skip = true
         end
-        local delivery_weapon_cannon = string.find(rcp.name, "^se%-delivery%-cannon%-weapon%-pack%-");
+        local delivery_weapon_cannon = string.find(rcp.name, "^se%-delivery%-cannon%-weapon%-pack%-")
         if delivery_weapon_cannon then
             skip = true
         end
         -- [BA] ignore void recipes
-        local void = string.find(rcp.name, "^void-");
+        local void = string.find(rcp.name, "^void%-")
         if void then
+            skip = true
+        end
+        -- [NLS] ignore unboxing recipes
+        local unboxing = string.find(rcp.name, "^nullius%-unbox%-")
+        if unboxing then
             skip = true
         end
         if rcp["results"] and #rcp["results"] == 0 then
@@ -864,10 +946,14 @@ local function process_recipes()
             skip = true
         end
 
-        if (not (true == rcp.hidden) or name == "rocket-part")
-        and (not (false == rcp.enabled) or recipes_enabled[name])
-        and (not skip)
-        then
+        local silo_recipe = false
+        for _, r in pairs(raw["rocket-silo"]) do
+            if (r.fixed_recipe == rcp.name) then
+                silo_recipe = true
+            end
+        end
+
+        if (not (true == rcp.hidden) or silo_recipe) and (not (false == rcp.enabled) or recipes_enabled[name]) and (not skip) then
             if nil == rcp.category then
                 rcp.category = "crafting"
             end
@@ -1061,6 +1147,74 @@ local function make_items()
 end
 
 
+local function make_launch_recipes(out, recipe)
+    for a = 1, #recipe.producers do
+        local producer = recipe.producers[a]
+        for b = 1, #silos do
+            local silo = silos[b]
+            if silo.name == producer then
+                for c = 1, #items_launch do
+                    local item = items_launch[c]
+                    -- process items_launch to build launch recipes
+                    local id = item.input .. "-launch"
+                    if item.product then
+                        id = item.product
+                        local fallback = false
+                        for i = 1, #recipes_ptr do
+                            local r = recipes_ptr[i]
+                            if r.name == id then
+                                fallback = true
+                                break
+                            end
+                        end
+                        
+                        if not fallback then
+                            for i = 1, #out do
+                                local r = out[i]
+                                if r.id == id then
+                                    fallback = true
+                                    break
+                                end
+                            end
+                        end
+
+                        if fallback then
+                            id = item.input .. "-" .. recipe.id .. "-" .. producer
+                            dbglog(1, "Found duplicate recipe id for launch product: '" .. item.product .. "', using unique id '" .. id .. "'\n")
+                        end
+                    end
+                    local ptr = get_item_ptr(item.input)
+                    if id ~= item.product then
+                        save_icon(ptr, id)
+                    end
+                    local r = {
+                        id = id,
+                        name = L(ptr) .. ' launch',
+                        ["in"] = {
+                            [item.input] = 1
+                        },
+                        part = recipe.id,
+                        out = item.products,
+                        time = 40.6,
+                        producers = { producer }
+                    }
+
+                    if recipe.out then
+                        for n, q in pairs(recipe.out) do
+                            r["in"][n] = q * silo.parts
+                        end
+                    else
+                        r["in"][recipe.id] = silo.parts
+                    end
+                    
+                    table.insert(out, r)
+                end
+            end
+        end
+    end
+end
+
+
 local function make_recipes()
     local out = {}
 
@@ -1088,7 +1242,7 @@ local function make_recipes()
             or (res[1].amount_min ~= nil and res[1].amount_min > 0) then
             t["out"] = {}
             for j = 1, #res do
-                local add;
+                local add
                 if res[j].amount_min then
                     add = (res[j].amount_max + res[j].amount_min) / 2
                 else
@@ -1123,7 +1277,7 @@ local function make_recipes()
             if #res > 1 or res[1].name ~= r.name or res[1].amount > 1 then
                 t.expensive.out = {}
                 for j = 1, #res do
-                    local add;
+                    local add
                     if res[j].amount_min then
                         add = (res[j].amount_max + res[j].amount_min) / 2
                     else
@@ -1145,6 +1299,7 @@ local function make_recipes()
         if producers[cat] then
             t["producers"] = { table.unpack(producers[cat]) }
             table.insert(out, t)
+            make_launch_recipes(out, t)
         else
             dbglog(1, "failed to find producers for recipe: " .. r.name .. "\n")
         end
@@ -1162,7 +1317,7 @@ local function make_recipes()
                 if e.minable then
                     if e.minable.result == p.name then
                         res = e
-                        break;
+                        break
                     end
                 end
             end
@@ -1177,7 +1332,7 @@ local function make_recipes()
                 t.id = p.name
                 t.mining = true
                 t.time = res.minable.mining_time
-                t.out =  { [p.name] = 10 };
+                t.out =  { [p.name] = 10 }
 
                 local cat = res.category
                 if producers[cat] then
@@ -1221,25 +1376,45 @@ local function make_recipes()
         local burnt = items_burnt[i]
         local cat = burnt.category
         if burners[cat] then
+            local id = burnt.result
+            for i = 1, #out do
+                local r = out[i]
+                if r.id == id then
+                    id = burnt.id .. '-burn'
+                    break
+                end
+            end
+            local ptr = get_item_ptr(burnt.result)
+            if id ~= burnt.result then
+                save_icon(ptr, id)
+            end
+            local r = {
+                id = id,
+                name = L(ptr),
+                time = 1,
+                ["in"] = { [burnt.id] = 0 },
+                ["out"] = { [burnt.result] = 0},
+                producers = {}
+            }
             for b = 1, #burners[cat] do
                 local burner = burners[cat][b]
-                local n = items_ptr[burnt.result]
-                local r = {
-                    id = burnt.result,
-                    name = L(n),
-                    time = 1,
-                    ["in"] = { [burnt.id] = 0 },
-                    ["out"] = { [burnt.result] = 0},
-                    producers = { burner.id }
-                }
-                table.insert(out, r)
+                table.insert(r.producers, burner.id)
             end
+            table.insert(out, r)
         else
             dbglog(1, "failed to find burners for result: " .. burnt.id .. "\n")
         end
     end
 
     for _, e in pairs(recipes_extra) do
+        for _, r in pairs(out) do
+            if r.id == e.id then
+                e.id = e.id .. '-' .. e.producers[1]
+                local ptr = get_item_ptr(r.id)
+                save_icon(ptr, e.id)
+                break
+            end
+        end
         table.insert(out, e)
     end
 
@@ -1249,27 +1424,27 @@ end
 local function trim(items, recipes)
     for i=#items,1,-1 do
         local item = items[i]
-        local found = false;
+        local found = false
         for r, recipe in pairs(recipes) do
             if not recipe["out"] and recipe.id == item.id then
-                found = true;
-                break;
+                found = true
+                break
             elseif recipe["in"] and recipe["in"][item.id] then
-                found = true;
-                break;
+                found = true
+                break
             elseif recipe["out"] and recipe["out"][item.id] then
-                found = true;
-                break;
+                found = true
+                break
             elseif recipe["expensive"] and recipe["expensive"]["in"] and recipe["expensive"]["in"][item.id] then
-                found = true;
-                break;
+                found = true
+                break
             elseif recipe["expensive"] and recipe["expensive"]["out"] and recipe["expensive"]["out"][item.id] then
-                found = true;
-                break;
+                found = true
+                break
             end
         end
         if not found then
-            table.remove(items, i);            
+            table.remove(items, i)           
         end
     end
 end
@@ -1339,7 +1514,7 @@ local function main()
         for _, u in ipairs(ic) do
             if u.id == v.ref then
                 ref = u
-                break;
+                break
             end
         end
         local t = {
