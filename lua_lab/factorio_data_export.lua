@@ -39,6 +39,7 @@ local producers = {}
 local silos = {}
 local burners = {}
 local launches = {}
+local boilers = {}
 
 --[[ level 4 ]]----------------------------------------------------------------
 
@@ -293,6 +294,91 @@ local function calculate_row(gr, sb)
 end
 
 
+--[[ icons ]]--------------------------
+
+
+local function save_icon(entry, id)
+    if not id then
+        id = entry.name
+    end
+    local icon = { id = id, path = {} }
+    local ptr = entry.icon and {entry} or entry.icons
+    if not ptr then
+        ptr = entry.main_product_ptr.icons
+        if not ptr then
+            error(id .. ", no icon(s) !!")
+        end
+    end
+    local i_sz = entry.icon_size or 64
+    local serialized = ""
+    for _, e in ipairs(ptr) do
+        local t = {}
+        t.icon = e.icon
+        t.size = e.icon_size or i_sz
+        t.mips = e.icon_mipmaps or 1
+        t.tint = e.tint
+        t.scale = e.scale -- may be nil
+        t.shift = e.shift
+        if (e.tint) then
+            serialized = string.format("%s,%s.%s.%s.%s.%s.%s.%s.%s", serialized, t.icon, t.size, t.mips, t.tint.r, t.tint.g, t.tint.b, t.scale, t.shift)
+        else
+            serialized = string.format("%s,%s.%s.%s.%s.%s", serialized, t.icon, t.size, t.mips, t.scale, t.shift)
+        end
+        table.insert(icon.path, t)
+    end
+
+    if entry.type == "recipe" then
+        local item = items_ptr[id]
+        if item then
+            local icon2 = { id = id, path = {} }
+            local ptr2 = item.icon and {item} or item.icons
+            local i_sz2 = item.icon_size or 64
+            local serialized2 = ""
+            for _, e in ipairs(ptr2) do
+                local t = {}
+                t.icon = e.icon
+                t.size = e.icon_size or i_sz2
+                t.mips = e.icon_mipmaps or 1
+                t.tint = e.tint
+                t.scale = e.scale -- may be nil
+                t.shift = e.shift
+                if (e.tint) then
+                    serialized2 = string.format("%s,%s.%s.%s.%s.%s.%s.%s.%s", serialized2, t.icon, t.size, t.mips, t.tint.r, t.tint.g, t.tint.b, t.scale, t.shift)
+                else
+                    serialized2 = string.format("%s,%s.%s.%s.%s.%s", serialized2, t.icon, t.size, t.mips, t.scale, t.shift)
+                end
+                table.insert(icon2.path, t)
+            end
+
+            if serialized ~= serialized2 then
+                icon.id = icon.id .. "|recipe"
+                if img_cache[serialized2] then
+                    local ref = {
+                        id = icon2.id,
+                        ref = img_cache[serialized2]
+                    }
+                    table.insert(copies, ref)
+                else
+                    img_cache[serialized2] = icon2.id
+                    table.insert(icons, icon2)
+                end
+            end
+        end
+    end
+    
+    if img_cache[serialized] then
+        local ref = {
+            id = icon.id,
+            ref = img_cache[serialized]
+        }
+        table.insert(copies, ref)
+    else
+        img_cache[serialized] = icon.id
+        table.insert(icons, icon)
+    end
+end
+
+
 local function process_producers(entry, drill)
     if drill then
         local cats = entry.resource_categories or {"basic-solid"}
@@ -540,8 +626,13 @@ local function process_item(p, t, limitation)
         if "burner" == type and not category then
             category = "chemical"
         end
+        local speed = 1.0
+        if mach.target_temperature == 165 then
+            speed = usage / 30
+            table.insert(boilers, mach.name)
+        end
         t.factory = {
-            speed = 1.0,
+            speed = speed,
             modules = 0,
             type = type,
             usage = usage,
@@ -747,91 +838,6 @@ local function process_item(p, t, limitation)
         end
         
         table.insert(items_launch, launch)
-    end
-end
-
-
---[[ icons ]]--------------------------
-
-
-local function save_icon(entry, id)
-    if not id then
-        id = entry.name
-    end
-    local icon = { id = id, path = {} }
-    local ptr = entry.icon and {entry} or entry.icons
-    if not ptr then
-        ptr = entry.main_product_ptr.icons
-        if not ptr then
-            error(id .. ", no icon(s) !!")
-        end
-    end
-    local i_sz = entry.icon_size or 64
-    local serialized = ""
-    for _, e in ipairs(ptr) do
-        local t = {}
-        t.icon = e.icon
-        t.size = e.icon_size or i_sz
-        t.mips = e.icon_mipmaps or 1
-        t.tint = e.tint
-        t.scale = e.scale -- may be nil
-        t.shift = e.shift
-        if (e.tint) then
-            serialized = string.format("%s,%s.%s.%s.%s.%s.%s.%s.%s", serialized, t.icon, t.size, t.mips, t.tint.r, t.tint.g, t.tint.b, t.scale, t.shift)
-        else
-            serialized = string.format("%s,%s.%s.%s.%s.%s", serialized, t.icon, t.size, t.mips, t.scale, t.shift)
-        end
-        table.insert(icon.path, t)
-    end
-
-    if entry.type == "recipe" then
-        local item = items_ptr[id]
-        if item then
-            local icon2 = { id = id, path = {} }
-            local ptr2 = item.icon and {item} or item.icons
-            local i_sz2 = item.icon_size or 64
-            local serialized2 = ""
-            for _, e in ipairs(ptr2) do
-                local t = {}
-                t.icon = e.icon
-                t.size = e.icon_size or i_sz2
-                t.mips = e.icon_mipmaps or 1
-                t.tint = e.tint
-                t.scale = e.scale -- may be nil
-                t.shift = e.shift
-                if (e.tint) then
-                    serialized2 = string.format("%s,%s.%s.%s.%s.%s.%s.%s.%s", serialized2, t.icon, t.size, t.mips, t.tint.r, t.tint.g, t.tint.b, t.scale, t.shift)
-                else
-                    serialized2 = string.format("%s,%s.%s.%s.%s.%s", serialized2, t.icon, t.size, t.mips, t.scale, t.shift)
-                end
-                table.insert(icon2.path, t)
-            end
-
-            if serialized ~= serialized2 then
-                icon.id = icon.id .. "|recipe"
-                if img_cache[serialized2] then
-                    local ref = {
-                        id = icon2.id,
-                        ref = img_cache[serialized2]
-                    }
-                    table.insert(copies, ref)
-                else
-                    img_cache[serialized2] = icon2.id
-                    table.insert(icons, icon2)
-                end
-            end
-        end
-    end
-    
-    if img_cache[serialized] then
-        local ref = {
-            id = icon.id,
-            ref = img_cache[serialized]
-        }
-        table.insert(copies, ref)
-    else
-        img_cache[serialized] = icon.id
-        table.insert(icons, icon)
     end
 end
 
@@ -1330,6 +1336,7 @@ local function make_recipes()
                 end
                 local t = {}
                 t.id = p.name
+                t.name = L(p)
                 t.mining = true
                 t.time = res.minable.mining_time
                 t.out =  { [p.name] = 10 }
@@ -1347,7 +1354,7 @@ local function make_recipes()
                 end
                 local t = {}
                 t.id = p.name
-                t.name = p.loc_name
+                t.name = L(p)
                 t.mining = true
 
                 local mine = res.minable
@@ -1406,10 +1413,35 @@ local function make_recipes()
         end
     end
 
+    if #boilers > 0 then
+        local steam = get_item_ptr("steam")
+        local water = get_item_ptr("water")
+        if steam and water then
+            local e = {
+                id = steam.name,
+                name = L(steam),
+                time = 1,
+                ["in"] = { [water.name] = 1 },
+                producers = boilers
+            }
+
+            for _, r in pairs(out) do
+                if r.id == e.id then
+                    e.id = e.id .. "-boil"
+                    save_icon(steam, e.id)
+                    e["out"] = { [steam.name] = 1 }
+                    break
+                end
+            end
+
+            table.insert(out, e)
+        end
+    end
+
     for _, e in pairs(recipes_extra) do
         for _, r in pairs(out) do
             if r.id == e.id then
-                e.id = e.id .. '-' .. e.producers[1]
+                e.id = e.id .. "-" .. e.producers[1]
                 local ptr = get_item_ptr(r.id)
                 save_icon(ptr, e.id)
                 break
