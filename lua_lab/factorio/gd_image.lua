@@ -55,6 +55,7 @@ local function copy_icon(x, y, SZ, mult, icon, canvas)
 
     -- draw multi-layers images
     local layers = 0
+    local baseScale = false
     local dSZ = 32 -- base size
     local tSZ -- projected image size
     local iSZ -- image size fitting shifts
@@ -64,6 +65,7 @@ local function copy_icon(x, y, SZ, mult, icon, canvas)
         local size = v.size or 32
         if _ == 1 then
             if v.scale then
+                baseScale = true
                 dSZ = size * v.scale
             elseif v.mips == 1 then
                 dSZ = size
@@ -113,7 +115,13 @@ local function copy_icon(x, y, SZ, mult, icon, canvas)
         local scale = v.scale or 1.0
         local mult = 1.0
         if v.scale then
-            mult = tSZ / dSZ
+            if (not baseScale) and _ > 0 and size == dSZ then
+                -- Krastorio 2 - icons have no icon_mipmaps, but scale larger
+                -- Seems to be due to match between first icon_size and later ones
+                mult = 2
+            else
+                mult = tSZ / dSZ
+            end
         end
         scale = scale * mult
         local dstW = size * scale
@@ -188,16 +196,18 @@ local function generate_image(icons)
             idx, icon = next(icons, idx)
             if not icon then break end
 
-            local dstX, dstY, layers, tint = copy_icon(x, y, SZ, 1, icon, canvas)
+            -- if icon.id == "enriched-copper-plate" or icon.id == "se-arcosphere-fold-a" then
+                local dstX, dstY, layers, tint = copy_icon(x, y, SZ, 1, icon, canvas)
 
-            local t = {
-                id = icon.id,
-                position = ("%dpx %dpx"):format(-dstX, -dstY),
-                color = rgbToHex(tint)
-            }
-            table.insert(out, t)
+                local t = {
+                    id = icon.id,
+                    position = ("%dpx %dpx"):format(-dstX, -dstY),
+                    color = rgbToHex(tint)
+                }
+                table.insert(out, t)
 
-            dbglog(-1, ("%2d|"):format(layers))
+                dbglog(-1, ("%2d|"):format(layers))
+            -- end
         end -- for x
         dbglog(-1, "\n")
         if not icon then break end

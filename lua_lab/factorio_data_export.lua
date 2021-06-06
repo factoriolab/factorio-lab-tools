@@ -1330,10 +1330,9 @@ local function make_recipes()
         end
 
         if res then
-            if res.category == "basic-fluid" or res.category == "water" then
-                if res.category == "water" then
-                    dbglog(1, "Processing water '" .. p.name .. "' as basic-fluid\n")
-                end
+            if raw.fluid[p.name] then
+                dbglog(1, "Processing '" .. p.name .. "' as fluid\n")
+                
                 local t = {}
                 t.id = p.name
                 t.name = L(p)
@@ -1349,9 +1348,8 @@ local function make_recipes()
                     dbglog(1, "failed to find producers for resource: " .. p.name .. "\n")
                 end
             else
-                if item[2] ~= "raw-resource" then
-                    dbglog(1, "Processing " .. item[2] .. " '" .. p.name .. "' as raw resource\n")
-                end
+                dbglog(1, "Processing '" .. p.name .. "' as raw resource\n")
+
                 local t = {}
                 t.id = p.name
                 t.name = L(p)
