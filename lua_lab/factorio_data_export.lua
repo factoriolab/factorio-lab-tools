@@ -408,7 +408,7 @@ local function process_producers(entry, drill)
         if not burners[cat] then
             burners[cat] = {}
         end
-        usage = util.convert_energy(usage) / 1000
+        usage = util.convert_energy(usage)
         local b = {
             id = entry.name,
             usage = usage
@@ -429,7 +429,7 @@ local function process_item(p, t, limitation)
         local type = beacon.energy_source.type
         local category = beacon.energy_source.fuel_category
         local usage = beacon.energy_usage
-        usage = util.convert_energy(usage) / 1000
+        usage = util.convert_energy(usage)
         t.beacon = {
             effectivity = beacon.distribution_effectivity,
             range = beacon.supply_area_distance,
@@ -462,7 +462,7 @@ local function process_item(p, t, limitation)
         local category = mach.energy_source.fuel_category
         local pollution = mach.energy_source.emissions_per_minute
         local usage = mach.energy_usage
-        usage = util.convert_energy(usage) / 1000
+        usage = util.convert_energy(usage)
         local drain
         if "electric" == type and mach.energy_source.drain then
             drain = util.convert_energy(mach.energy_source.drain)
@@ -499,7 +499,7 @@ local function process_item(p, t, limitation)
             local category = mach.energy_source.fuel_category
             local pollution = mach.energy_source.emissions_per_minute
             local usage = mach.energy_usage
-            usage = util.convert_energy(usage) / 1000
+            usage = util.convert_energy(usage)
             local drain
             if "electric" == type and mach.energy_source.drain then
                 drain = util.convert_energy(mach.energy_source.drain)
@@ -532,7 +532,7 @@ local function process_item(p, t, limitation)
         local category = mach.energy_source.fuel_category
         local pollution = mach.energy_source.emissions_per_minute
         local usage = mach.energy_usage
-        usage = util.convert_energy(usage) / 1000
+        usage = util.convert_energy(usage)
         local drain
         if "electric" == type and mach.energy_source.drain then
             drain = util.convert_energy(mach.energy_source.drain)
@@ -561,7 +561,7 @@ local function process_item(p, t, limitation)
         local category = mach.energy_source.fuel_category
         local pollution = mach.energy_source.emissions_per_minute
         local usage = mach.energy_usage
-        usage = util.convert_energy(usage) / 1000
+        usage = util.convert_energy(usage)
         local drain
         if "electric" == type and mach.energy_source.drain then
             drain = util.convert_energy(mach.energy_source.drain)
@@ -590,7 +590,7 @@ local function process_item(p, t, limitation)
         local category = mach.energy_source.fuel_category
         local pollution = mach.energy_source.emissions_per_minute
         local usage = mach.energy_usage
-        usage = util.convert_energy(usage) / 1000
+        usage = util.convert_energy(usage)
         local drain
         if "electric" == type and mach.energy_source.drain then
             drain = util.convert_energy(mach.energy_source.drain)
@@ -618,7 +618,7 @@ local function process_item(p, t, limitation)
         local category = mach.energy_source.fuel_category
         local pollution = mach.energy_source.emissions_per_minute
         local usage = mach.energy_consumption
-        usage = util.convert_energy(usage) / 1000
+        usage = util.convert_energy(usage)
         local drain
         if "electric" == type and mach.energy_source.drain then
             drain = util.convert_energy(mach.energy_source.drain)
@@ -648,7 +648,7 @@ local function process_item(p, t, limitation)
         local category = mach.energy_source.fuel_category
         local pollution = mach.energy_source.emissions_per_minute
         local usage = mach.energy_usage
-        usage = util.convert_energy(usage) / 1000
+        usage = util.convert_energy(usage)
         local drain
         if "electric" == type and mach.energy_source.drain then
             drain = util.convert_energy(mach.energy_source.drain)
@@ -712,7 +712,7 @@ local function process_item(p, t, limitation)
     local mach = raw["reactor"][p.name]
     if mach then
         local usage = mach.consumption
-        usage = util.convert_energy(usage) / 1000
+        usage = util.convert_energy(usage)
         
         if mach.burner then
             t.factory = {
@@ -766,7 +766,7 @@ local function process_item(p, t, limitation)
     end
     local fuel_value = main.fuel_value
     if fuel_value then
-        local fuel = util.convert_energy(fuel_value) / 1000000.0 -- to MJ
+        local fuel = util.convert_energy(fuel_value) / 1000.0 -- to MJ
         local category = main.fuel_category
         local result = main.burnt_result
 

@@ -57,7 +57,7 @@ local function convert_energy(e)
     end
     local num, mult = e:match("([0-9%.]+)([kKMGTPEZY]*)[WJ]")
     mult = eK[mult]
-    return num * 10^mult
+    return (num * 10^mult / 1000)
 end
 
 local function save_file(data, fn, mode)
