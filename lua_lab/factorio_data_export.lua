@@ -1002,8 +1002,6 @@ local function sort_recipes()
         local ptr = recipes_ptr[i]
         local ord, sgr, sgo, grp, gro = get_order_sub_group(ptr)
         table.insert(t, {ptr, ptr["name"], ord, sgr, sgo, grp, gro})
-
-        categories_used[grp] = true
     end
     util.sort_by(t, 7, 6, 5, 4, 3, 2)
 
@@ -1021,17 +1019,10 @@ local function sort_recipes()
         local s = t[i]
         table.insert(recipes_sorted, {ptr = s[1], subgroup = s[4], group = s[6]})
 
-        save_icon(s[1])
-
         local name = s[1]["name"]
-
         local ptr = get_item_ptr(name, nil, "3")
-        if ptr then
-            items_ready[name] = ptr
-            items_as_ingredient[name] = nil
-            items_as_product[name] = nil
-        else
-            -- TODO
+        if not ptr then
+            save_icon(s[1])
         end
     end
 
@@ -1052,8 +1043,32 @@ local function sort_recipes()
         end
     end
     dbglog(-2, " and ", c, " products left\n")
+end
 
-    categories_used["other"] = true -- manual add
+
+local function sort_items()
+    local t = {}
+    for k, _ in pairs(items_used) do
+        local item_ptr = get_item_ptr(k, nil, "4")
+        if item_ptr ~= nil then
+            local ord, sgr, sgo, grp, gro = get_order_sub_group(item_ptr)
+            table.insert(t, {item_ptr, item_ptr["name"], ord, sgr, sgo, grp, gro})
+        end
+    end
+    util.sort_by(t, 7, 6, 5, 4, 3, 2)
+
+    items_used = {}
+    local s = {}
+    for i = 1, #t do
+        local ptr = t[i][1]
+        table.insert(items_used, { t[i][1], t[i][4], t[i][6] })
+        save_icon(ptr)
+        table.insert(s, t[i][2])
+        
+        local ord, sgr, sgo, grp, gro = get_order_sub_group(ptr)
+        categories_used[grp] = true
+    end
+
     local cats = categories_used
     t = {}
     for c, _ in pairs(cats) do
@@ -1072,61 +1087,16 @@ local function sort_recipes()
 end
 
 
-local function sort_items()
-    local t = {}
-    for k, _ in pairs(items_used) do
-        local item_ptr = get_item_ptr(k, nil, "4")
-        if item_ptr ~= nil then
-            local ord, sgr, sgo, grp, gro = get_order_sub_group(item_ptr)
-            table.insert(t, {item_ptr, item_ptr["name"], ord, sgr, sgo, grp, gro})
-        end
-    end
-    util.sort_by(t, 7, 6, 5, 4, 3, 2)
-
-    items_used = {}
-    dbglog(2, "other items: ")
-    local s = {}
-    for i = 1, #t do
-        local ptr = t[i][1]
-        table.insert(items_used, { t[i][1], t[i][4], t[i][6] })
-        save_icon(ptr)
-        table.insert(s, t[i][2])
-    end
-    dbglog(-2, table.concat(s, ", "), "\n")
-end
-
-
 local function make_items()
     local out = {}
     local limitation = {}
     calculate_row() -- reset
 
-    for i = 1, #recipes_sorted do
-        local r = recipes_sorted[i]
-        local p = r.ptr
-        local t = {}
-
-        t.id = p.name
-        t.name = p.loc_name
-
-        local item = items_ready[p.name]
-        if item then
-            t.name = L(item)
-            t.stack = item.stack_size
-            t.category = r.group
-            t.row = calculate_row(r.group, r.subgroup)
-
-            process_item(p, t, limitation)
-
-            table.insert(out, t)
-        end
-    end
-
-    -- now raw-resources, etc
     for i = 1, #items_used do
         local item = items_used[i]
         local p = item[1]
         local t = {}
+        local ord, sgr, sgo, grp, gro = get_order_sub_group(p)
 
         if not p.localised_name then
             if raw["ammo-turret"][p.name] and raw["ammo-turret"][p.name].localised_name then
@@ -1140,9 +1110,8 @@ local function make_items()
         t.id = p.name
         t.name = L(p)
         t.stack = p.stack_size
-        t.category = "other"
-        t.subgroup = p.subgroup
-        t.row = calculate_row("other", item[2])
+        t.category = grp
+        t.row = calculate_row(grp, sgr)
 
         process_item(p, t, limitation)
 
