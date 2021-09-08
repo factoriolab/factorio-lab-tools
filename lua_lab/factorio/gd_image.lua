@@ -56,7 +56,9 @@ local function copy_icon(x, y, SZ, mult, icon, canvas)
     -- draw multi-layers images
     local layers = 0
     local baseScale = false
-    local dSZ = 32 -- base size
+    local noMips = false
+    local noBaseSize = icon.size == nil
+    local bSZ = 32 -- base size
     local tSZ -- projected image size
     local iSZ -- image size fitting shifts
     local temp
@@ -66,9 +68,10 @@ local function copy_icon(x, y, SZ, mult, icon, canvas)
         if _ == 1 then
             if v.scale then
                 baseScale = true
-                dSZ = size * v.scale
+                bSZ = size * v.scale
             elseif v.mips == 1 then
-                dSZ = size
+                noMips = true
+                bSZ = size
             end
         end
         local scale = v.scale or 1.0
@@ -115,12 +118,14 @@ local function copy_icon(x, y, SZ, mult, icon, canvas)
         local scale = v.scale or 1.0
         local mult = 1.0
         if v.scale then
-            if (not baseScale) and _ > 0 and size == dSZ then
+            if (not baseScale) and _ > 0 and size == bSZ then
                 -- Krastorio 2 - icons have no icon_mipmaps, but scale larger
                 -- Seems to be due to match between first icon_size and later ones
-                mult = 2
+                if noMips and noBaseSize then
+                    mult = 2
+                end
             else
-                mult = tSZ / dSZ
+                mult = tSZ / bSZ
             end
         end
         scale = scale * mult
@@ -196,7 +201,8 @@ local function generate_image(icons)
             idx, icon = next(icons, idx)
             if not icon then break end
 
-            -- if icon.id == "enriched-copper-plate" or icon.id == "se-arcosphere-fold-a" then
+            -- if icon.id == "angels-components" or icon.id == "fill-water-barrel" or icon.id == "angels-water-void-crystal-matrix" then
+            -- if icon.id == "matter-to-glass" then
                 local dstX, dstY, layers, tint = copy_icon(x, y, SZ, 1, icon, canvas)
 
                 local t = {

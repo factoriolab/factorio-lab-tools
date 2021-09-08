@@ -133,7 +133,6 @@ local function set_IconSpecification(ptr, from)
     end
 
     ptr.icon = nil
-    ptr.icon_size = nil
     ptr.icon_mipmaps = nil
     ptr.icons = ico
 end
@@ -301,7 +300,7 @@ local function save_icon(entry, id)
     if not id then
         id = entry.name
     end
-    local icon = { id = id, path = {} }
+    local icon = { id = id, path = {}, size = entry.icon_size }
     local ptr = entry.icon and {entry} or entry.icons
     if not ptr then
         ptr = entry.main_product_ptr.icons
@@ -520,6 +519,7 @@ local function process_item(p, t, limitation)
                 id = mach.fluid,
                 name = L(f),
                 time = 1,
+                cost = 100,
                 producers = { mach.name }
             }
             table.insert(recipes_extra, r)
@@ -536,6 +536,15 @@ local function process_item(p, t, limitation)
         local drain
         if "electric" == type and mach.energy_source.drain then
             drain = util.convert_energy(mach.energy_source.drain)
+        end
+        if "electric" == type and usage and not drain then
+            local p = usage
+            local q = 30
+            while math.floor(p) ~= p do
+                p = p * 10
+                q = q * 10
+            end
+            drain = p .. '/' .. q
         end
         if "burner" == type and not category then
             category = "chemical"
@@ -565,6 +574,15 @@ local function process_item(p, t, limitation)
         local drain
         if "electric" == type and mach.energy_source.drain then
             drain = util.convert_energy(mach.energy_source.drain)
+        end
+        if "electric" == type and usage and not drain then
+            local p = usage
+            local q = 30
+            while math.floor(p) ~= p do
+                p = p * 10
+                q = q * 10
+            end
+            drain = p .. '/' .. q
         end
         if "burner" == type and not category then
             category = "chemical"
@@ -1190,7 +1208,7 @@ local function make_launch_recipes(out, recipe)
 end
 
 
-local function make_recipes()
+local function make_recipes(limitation)
     local out = {}
 
     for i = 1, #recipes_sorted do
@@ -1299,13 +1317,22 @@ local function make_recipes()
         end
 
         if res then
+            local id = p.name
+            for i = 1, #out do
+                local r = out[i]
+                if r.id == id then
+                    id = id .. '-mining'
+                    break
+                end
+            end
+
             if raw.fluid[p.name] then
                 dbglog(1, "Processing '" .. p.name .. "' as fluid\n")
                 
                 local t = {}
-                t.id = p.name
+                t.id = id
                 t.name = L(p)
-                t.mining = true
+                t.cost = 1000
                 t.time = res.minable.mining_time
                 t.out =  { [p.name] = 10 }
 
@@ -1313,6 +1340,7 @@ local function make_recipes()
                 if producers[cat] then
                     t["producers"] = { table.unpack(producers[cat]) }
                     table.insert(out, t)
+                    table.insert(limitation["productivity-module"], t.id)
                 else
                     dbglog(1, "failed to find producers for resource: " .. p.name .. "\n")
                 end
@@ -1320,9 +1348,9 @@ local function make_recipes()
                 dbglog(1, "Processing '" .. p.name .. "' as raw resource\n")
 
                 local t = {}
-                t.id = p.name
+                t.id = id
                 t.name = L(p)
-                t.mining = true
+                t.cost = 10000
 
                 local mine = res.minable
                 if mine then
@@ -1339,6 +1367,7 @@ local function make_recipes()
                 if producers[cat] then
                     t["producers"] = { table.unpack(producers[cat]) }
                     table.insert(out, t)
+                    table.insert(limitation["productivity-module"], t.id)
                 else
                     dbglog(1, "failed to find producers for resource: " .. p.name .. "\n")
                 end
@@ -1503,7 +1532,7 @@ local function main()
     -- table.insert(icons, icon)
 
     local i, l = make_items()
-    local r = make_recipes()
+    local r = make_recipes(l)
     trim(i, r)
 
     local ic = gd_image.generate_image(icons)

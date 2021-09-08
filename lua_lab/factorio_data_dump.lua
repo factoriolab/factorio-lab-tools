@@ -200,11 +200,30 @@ _require = function(m, skip, opt)
     if 1 == a then
         m = m:sub(b+1)
     end
+    -- also check for __modname__.
+    check = "__" .. name .. "__."
+    a, b = m:find(check)
+    if 1 == a then
+        m = m:sub(b+1)
+    end
     -- \\
 
     -- [PYANODONS] handle reference to stdlib
     local mod_dir = {}
     check = "__(.+)__/"
+    local other = m:match(check)
+    if other then
+        name = other
+        a, b = m:find(check)
+        if 1 == a then
+            m = m:sub(b+1)
+            local ver = _F.mods[name]
+            table.insert(mod_dir, ("%s/%s_%s/?.lua"):format(args.moddir, name, ver))
+        end
+    end
+
+    -- Also check __x__.
+    check = "__(.+)__."
     local other = m:match(check)
     if other then
         name = other

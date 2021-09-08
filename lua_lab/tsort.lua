@@ -59,6 +59,11 @@ function tsort:sort()
     for k in pairs(n) do
         if m[k] == nil then
             if visit(k, n, m, s) then
+                print('Circular Dependency!')
+                print(k)
+                print(n)
+                print(m)
+                print(s)
                 return nil, "circular dependency!"
             end
         end
