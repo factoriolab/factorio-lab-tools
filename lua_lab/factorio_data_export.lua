@@ -301,7 +301,7 @@ local function save_icon(entry, id)
         id = entry.name
     end
     local icon = { id = id, path = {}, size = entry.icon_size }
-    local ptr = entry.icon and {entry} or entry.icons
+    local ptr = entry.icons or entry.icon and {entry}
     if not ptr then
         ptr = entry.main_product_ptr.icons
         if not ptr then
@@ -921,7 +921,7 @@ local function process_technology()
         if eff then
             for i = 1, #eff do
                 local eff_i = eff[i]
-                if "unlock-recipe" == eff_i["type"] then
+                if eff_i and "unlock-recipe" == eff_i["type"] then
                     c = c + 1
                     recipes_enabled[eff_i["recipe"]] = true
                 end
@@ -1322,6 +1322,7 @@ local function make_recipes(limitation)
                 local r = out[i]
                 if r.id == id then
                     id = id .. '-mining'
+                    save_icon(p, id)
                     break
                 end
             end
@@ -1363,7 +1364,7 @@ local function make_recipes(limitation)
                     end
                 end
 
-                local cat = p.category or "basic-solid"
+                local cat = res.category or p.category or "basic-solid"
                 if producers[cat] then
                     t["producers"] = { table.unpack(producers[cat]) }
                     table.insert(out, t)

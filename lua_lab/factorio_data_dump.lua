@@ -440,6 +440,9 @@ do
 
     -- TODO: add version check
     local function mod_needed(name, pfx, mod, cond, ver)
+        if "~" == pfx then
+            return false
+        end
         if load_order[name] then
             if "!" == pfx then
                 assert(false, "incompatibility: " .. name)
@@ -514,7 +517,7 @@ do
                     local deps = j.dependencies
                     if not deps then deps = {("base >= %s"):format(mods_used["base"].ver)} end
                     for _, v in ipairs(deps) do
-                        local pfx, name, cond, ver = v:match("([()!?]*)[ ]*([^=<>]+[^%s=<>])[ ]*([=<>]*)[ ]*(.*)")
+                        local pfx, name, cond, ver = v:match("([()!?~]*)[ ]*([^=<>]+[^%s=<>])[ ]*([=<>]*)[ ]*(.*)")
                         if mod_needed(name, pfx, mod, cond, ver) then
                             table.insert(load_order[mod], name)
                         end
